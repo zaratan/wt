@@ -3,7 +3,10 @@ import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { umbrellaAsker } from "./umbrella.js";
 import type { CommandContext } from "./context.js";
-import { makeSandbox, type Sandbox } from "../test/fixtures/git.js";
+import { makeRepo, makeSandbox, type Sandbox } from "../test/fixtures/git.js";
+import { resolveRepo } from "../lib/git/resolve.js";
+import { createProbes } from "../lib/git/probes.js";
+import { createGit } from "../lib/git/exec.js";
 
 let sandbox: Sandbox;
 
@@ -74,5 +77,33 @@ describe("umbrellaAsker", () => {
         contextWith({ dryRun: true, confirm: () => Promise.resolve(true) }),
       ),
     ).toBeUndefined();
+  });
+
+  it("is asked when wt runs from inside the repository, the common case", async () => {
+    const parent = join(sandbox.root, "from-inside");
+    await mkdir(parent, { recursive: true });
+    const repo = await makeRepo(parent, "app");
+    const asked: string[] = [];
+
+    const resolution = await resolveRepo(
+      {
+        startDir: repo,
+        askUmbrella: (question) => {
+          asked.push(question.parent);
+          return Promise.resolve(true);
+        },
+      },
+      createProbes(
+        createGit({
+          cwd: repo,
+          env: { PATH: process.env.PATH, HOME: process.env.HOME, LC_ALL: "C" },
+        }),
+      ),
+    );
+
+    if (resolution.kind !== "ok") throw new Error(resolution.kind);
+    expect(asked).toEqual([parent]);
+    expect(resolution.topology.umbrella).toBe("umbrella");
+    expect(resolution.topology.umbrellaReason).toBe("answered");
   });
 });

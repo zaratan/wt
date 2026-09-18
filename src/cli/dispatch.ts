@@ -15,7 +15,10 @@ import { renderStatus } from "../format/status.js";
 import { renderRm } from "../format/rm.js";
 import { checkLayout } from "../format/layout.js";
 import { renderOpen } from "../format/open.js";
-import { renderProvision } from "../format/provision.js";
+import {
+  renderProvision,
+  renderProvisionFailure,
+} from "../format/provision.js";
 import { zshCompletion } from "../format/completion.js";
 import { renderConfig } from "../format/config.js";
 import { EXIT } from "./exit.js";
@@ -81,7 +84,7 @@ export const dispatch = async (
     case "ls": {
       const result = await runLs(
         {
-          repo: value(invocation.options, "repo"),
+          repo: invocation.positionals.repo,
           all: flag(invocation.options, "all", false),
         },
         context,
@@ -105,14 +108,22 @@ export const dispatch = async (
         return { stderr: "wt provision: missing <branch>\n", code: EXIT.USAGE };
       }
       const result = await runProvision(
-        { repo: value(invocation.options, "repo"), branch },
+        { repo: invocation.positionals.repo, branch },
         context,
       );
+      // Three different outcomes used to collapse into 3: an agent following
+      // the exit-code contract would retry a successful dry run forever.
+      const provisionCode =
+        result.kind === "error" || result.kind === "choose"
+          ? EXIT.ERROR
+          : result.kind === "planned" || result.report.ok
+            ? EXIT.OK
+            : EXIT.PARTIAL;
+
       if (context.json) {
         return {
           stdout: `${JSON.stringify(result, null, 2)}\n`,
-          code:
-            result.kind === "ok" && result.report.ok ? EXIT.OK : EXIT.PARTIAL,
+          code: provisionCode,
         };
       }
       if (result.kind === "planned") {
@@ -124,10 +135,7 @@ export const dispatch = async (
         };
       }
       if (result.kind !== "ok") {
-        return {
-          stderr: `wt provision: ${result.kind === "error" ? result.message : "pick a repository"}\n`,
-          code: EXIT.ERROR,
-        };
+        return { stderr: renderProvisionFailure(result), code: provisionCode };
       }
       return {
         stdout: renderProvision(result.report),
@@ -142,7 +150,7 @@ export const dispatch = async (
       }
       const result = await runOpen(
         {
-          repo: value(invocation.options, "repo"),
+          repo: invocation.positionals.repo,
           target,
           focus: flag(invocation.options, "focus", context.interactive),
           layout: value(invocation.options, "layout"),
@@ -176,7 +184,7 @@ export const dispatch = async (
       }
       const result = await runConfig(
         action,
-        invocation.positionals.repo ?? value(invocation.options, "repo"),
+        invocation.positionals.repo,
         context,
       );
       if (context.json) {
@@ -222,7 +230,7 @@ export const dispatch = async (
       }
       const result = await runRm(
         {
-          repo: value(invocation.options, "repo"),
+          repo: invocation.positionals.repo,
           target,
           force: flag(invocation.options, "force", false),
           deleteBranch: invocation.options["delete-branch"] as
@@ -257,7 +265,7 @@ export const dispatch = async (
     case "status": {
       const result = await runStatus(
         {
-          repo: value(invocation.options, "repo"),
+          repo: invocation.positionals.repo,
           target: invocation.positionals.target,
         },
         context,
@@ -277,7 +285,7 @@ export const dispatch = async (
 
     case "prune": {
       const result = await runLs(
-        { repo: value(invocation.options, "repo"), all: true },
+        { repo: invocation.positionals.repo, all: true },
         context,
       );
       if (result.kind !== "ok") {

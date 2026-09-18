@@ -221,3 +221,52 @@ describe("global options given before the command", () => {
     expect(asRun(run("--cwd=/tmp ls")).spec.name).toBe("ls");
   });
 });
+
+describe("the repo argument", () => {
+  it("puts a positional repo where dispatch reads it, for every command that takes one", () => {
+    for (const argv of [
+      ["rm", "myrepo", "CMDB"],
+      ["open", "myrepo", "CMDB"],
+      ["provision", "myrepo", "feat/x"],
+      ["new", "myrepo", "feat/x"],
+    ]) {
+      const result = parse(argv);
+      if (result.kind !== "run")
+        throw new Error(`${argv[0] ?? ""}: ${result.kind}`);
+      expect(result.invocation.positionals.repo).toBe("myrepo");
+    }
+  });
+
+  it("puts --repo in the same slot, so one read covers both forms", () => {
+    const result = parse(["ls", "--repo", "myrepo"]);
+    if (result.kind !== "run") throw new Error(result.kind);
+    expect(result.invocation.positionals.repo).toBe("myrepo");
+  });
+});
+
+describe("a bare wt", () => {
+  it("keeps the global options typed before the implied command", () => {
+    for (const [argv, key, expected] of [
+      [["--json"], "json", true],
+      [["--yes"], "yes", true],
+      [["--cwd", "/x"], "cwd", "/x"],
+    ] as const) {
+      const result = parse([...argv]);
+      if (result.kind !== "run") throw new Error(result.kind);
+      expect(result.invocation.options[key]).toBe(expected);
+    }
+  });
+
+  it("still rejects an unknown option instead of falling back silently", () => {
+    expect(parse(["--nope"]).kind).toBe("error");
+  });
+
+  it("marks the invocation as defaulted, which an explicit `wt ls` is not", () => {
+    const bare = parse([]);
+    const explicit = parse(["ls"]);
+    if (bare.kind !== "run" || explicit.kind !== "run")
+      throw new Error("expected run");
+    expect(bare.invocation.defaulted).toBe(true);
+    expect(explicit.invocation.defaulted ?? false).toBe(false);
+  });
+});

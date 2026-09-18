@@ -112,6 +112,7 @@ export const resolveRepo = async (
       startDir,
       forceUmbrella: input.forceUmbrella,
       worktreesDir: input.worktreesDir,
+      askUmbrella: input.askUmbrella,
     },
     probes,
   );

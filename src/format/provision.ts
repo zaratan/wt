@@ -1,4 +1,5 @@
 import type { ProvisionReport } from "../lib/provision/run.js";
+import type { ProvisionResult } from "../commands/provision.js";
 
 export const interruptedIn = (report: ProvisionReport): boolean =>
   report.commands.some((command) => command.outcome === "interrupted");
@@ -75,3 +76,21 @@ export const renderProvision = (report: ProvisionReport): string =>
           : "Provisioning failed.",
     ...provisionLines(report),
   ].join("\n")}\n`;
+
+export const renderProvisionFailure = (
+  result: Extract<ProvisionResult, { kind: "error" | "choose" }>,
+): string =>
+  result.kind === "error"
+    ? [
+        `wt provision: ${result.message}`,
+        ...(result.hint === undefined ? [] : [`  ${result.hint}`]),
+        "",
+      ].join("\n")
+    : [
+        `Several repositories live under ${result.from}:`,
+        "",
+        ...result.candidates.map((candidate) => `  ${candidate.name}`),
+        "",
+        `Name one:  wt provision ${result.candidates[0]?.name ?? "<repo>"} <branch>`,
+        "",
+      ].join("\n");

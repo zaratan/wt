@@ -4,6 +4,8 @@ import { COMMANDS, GLOBAL_OPTIONS, findCommand } from "./spec.js";
 export type OptionValues = Readonly<Record<string, string | boolean>>;
 
 export type Invocation = {
+  /** True when no command was typed, which is the dashboard's slot. */
+  defaulted?: boolean;
   spec: CommandSpec;
   positionals: Readonly<Record<string, string | undefined>>;
   options: OptionValues;
@@ -145,22 +147,12 @@ export const parse = (argv: readonly string[]): ParseResult => {
 
   if (commandToken === undefined) {
     if (wantsHelp) return { kind: "help" };
-    const fallback = findCommand(DEFAULT_COMMAND);
-    if (fallback === undefined) {
-      return {
-        kind: "error",
-        message: "wt: internal error: no default command",
-      };
-    }
-    return {
-      kind: "run",
-      invocation: {
-        spec: fallback,
-        positionals: {},
-        options: {},
-        rest,
-      },
-    };
+    // Re-parse with the default command spelled out, so global options given
+    // before it are parsed and validated instead of silently dropped.
+    const parsed = parse([DEFAULT_COMMAND, ...argv]);
+    return parsed.kind === "run"
+      ? { kind: "run", invocation: { ...parsed.invocation, defaulted: true } }
+      : parsed;
   }
 
   const spec = findCommand(commandToken);

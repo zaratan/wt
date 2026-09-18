@@ -7,6 +7,8 @@ import { renderRm } from "../format/rm.js";
 import type { CommandContext } from "./context.js";
 import { createGit } from "../lib/git/exec.js";
 import { run } from "../lib/exec/run.js";
+import { parse } from "../cli/parse.js";
+import { dispatch } from "../cli/dispatch.js";
 import { createProbes } from "../lib/git/probes.js";
 import { hasUnsavedWork, worktreeStatus } from "../lib/git/status.js";
 import {
@@ -440,5 +442,24 @@ describe("the live-process guard", () => {
       controller.abort();
       await running;
     }
+  });
+});
+
+describe("naming another repository on the command line", () => {
+  it("removes from the repo that was named, not from the one we stand in", async () => {
+    const parent = join(sandbox.root, "two-repos");
+    await mkdir(parent, { recursive: true });
+    const here = await makeRepo(parent, "here");
+    const there = await makeRepo(parent, "there");
+    const ours = await addWorktreeTo(here, "feat/x");
+    const theirs = await addWorktreeTo(there, "feat/x");
+
+    const parsed = parse(["rm", "there", "feat/x", "--keep-space", "--force"]);
+    if (parsed.kind !== "run") throw new Error(parsed.kind);
+    const output = await dispatch(parsed.invocation, contextAt(here));
+
+    expect(output.code).toBe(0);
+    expect(await stat(ours)).toBeTruthy();
+    await expect(stat(theirs)).rejects.toThrow();
   });
 });
