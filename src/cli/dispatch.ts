@@ -1,8 +1,12 @@
 import { doctor } from "../commands/doctor.js";
 import { runNew } from "../commands/new.js";
+import { runLs } from "../commands/ls.js";
+import { runStatus } from "../commands/status.js";
 import type { CommandContext } from "../commands/context.js";
 import { renderDoctor } from "../format/doctor.js";
 import { renderNew } from "../format/new.js";
+import { renderLs } from "../format/ls.js";
+import { renderStatus } from "../format/status.js";
 import { EXIT } from "./exit.js";
 import type { ExitCode } from "./exit.js";
 import { flag, value } from "./parse.js";
@@ -52,6 +56,71 @@ export const dispatch = async (
         return { stderr: text, code: EXIT.ERROR };
       }
       return { stdout: text, code: EXIT.OK };
+    }
+
+    case "ls": {
+      const result = await runLs(
+        {
+          repo: value(invocation.options, "repo"),
+          all: flag(invocation.options, "all", false),
+        },
+        context,
+      );
+
+      if (context.json) {
+        return {
+          stdout: `${JSON.stringify(result, null, 2)}\n`,
+          code: result.kind === "ok" ? EXIT.OK : EXIT.ERROR,
+        };
+      }
+      const text = renderLs(result);
+      return result.kind === "ok"
+        ? { stdout: text, code: EXIT.OK }
+        : { stderr: text, code: EXIT.ERROR };
+    }
+
+    case "status": {
+      const result = await runStatus(
+        {
+          repo: value(invocation.options, "repo"),
+          target: invocation.positionals.target,
+        },
+        context,
+      );
+
+      if (context.json) {
+        return {
+          stdout: `${JSON.stringify(result, null, 2)}\n`,
+          code: result.kind === "ok" ? EXIT.OK : EXIT.ERROR,
+        };
+      }
+      const text = renderStatus(result);
+      return result.kind === "ok"
+        ? { stdout: text, code: EXIT.OK }
+        : { stderr: text, code: EXIT.ERROR };
+    }
+
+    case "prune": {
+      const result = await runLs(
+        { repo: value(invocation.options, "repo"), all: true },
+        context,
+      );
+      if (result.kind !== "ok") {
+        return { stderr: renderLs(result), code: EXIT.ERROR };
+      }
+      const { orphans, pruned } = result.report;
+      const report = [
+        pruned ? "Pruned stale git entries." : "No stale git entries.",
+        ...(orphans.length === 0
+          ? []
+          : [
+              "",
+              "Directories git does not know about (left alone):",
+              ...orphans.map((orphan) => `  ${orphan.path}`),
+            ]),
+        "",
+      ].join("\n");
+      return { stdout: report, code: EXIT.OK };
     }
 
     case "doctor": {
