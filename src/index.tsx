@@ -6,6 +6,7 @@ import { dispatch } from "./cli/dispatch.js";
 import { EXIT } from "./cli/exit.js";
 import type { CommandContext } from "./commands/context.js";
 import { interactiveResolvers } from "./ui/drive.js";
+import { runDashboard } from "./ui/dashboard.js";
 import { APP_VERSION } from "./version.js";
 
 // The only place that reads ambient process state; everything below takes it
@@ -66,6 +67,7 @@ switch (result.kind) {
           chooseRepo: undefined,
           reviewConfig: undefined,
           confirm: undefined,
+          withProgress: undefined,
         };
 
     const context: CommandContext = {
@@ -85,6 +87,7 @@ switch (result.kind) {
       pid: process.pid,
       chooseRepo: resolvers.chooseRepo,
       reviewConfig: resolvers.reviewConfig,
+      withProgress: resolvers.withProgress,
       trace: verbose
         ? (line) => {
             process.stderr.write(`${line}\n`);
@@ -105,6 +108,22 @@ switch (result.kind) {
     };
     process.on("SIGINT", onInterrupt);
     process.on("SIGTERM", onInterrupt);
+
+    // The only invocation the parser chose rather than the user: the dashboard's
+    // slot. An explicit `wt ls` stays the text listing it has always been.
+    if (result.invocation.defaulted === true && interactive) {
+      const message = await runDashboard(context, inkHeld);
+      process.off("SIGINT", onInterrupt);
+      process.off("SIGTERM", onInterrupt);
+      if (message !== undefined) process.stderr.write(`${message}\n`);
+      process.exit(
+        interrupt.requested
+          ? EXIT.INTERRUPTED
+          : message === undefined
+            ? EXIT.OK
+            : EXIT.ERROR,
+      );
+    }
 
     const output = await dispatch(result.invocation, context);
     process.off("SIGINT", onInterrupt);

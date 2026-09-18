@@ -1,4 +1,4 @@
-import type { ProvisionReport } from "../lib/provision/run.js";
+import type { ProvisionEvent, ProvisionReport } from "../lib/provision/run.js";
 import type { ProvisionResult } from "../commands/provision.js";
 
 export const interruptedIn = (report: ProvisionReport): boolean =>
@@ -94,3 +94,17 @@ export const renderProvisionFailure = (
         `Name one:  wt provision ${result.candidates[0]?.name ?? "<repo>"} <branch>`,
         "",
       ].join("\n");
+
+/** The --verbose line for one event, or nothing when it is not worth a line. */
+export const describeEvent = (event: ProvisionEvent): string | undefined => {
+  switch (event.kind) {
+    case "copy":
+      return `${event.outcome} ${event.path}`;
+    case "step-start":
+      return `$ ${event.run}`;
+    case "step-done":
+      return event.outcome === "ran" ? undefined : event.outcome;
+    case "output":
+      return event.line;
+  }
+};

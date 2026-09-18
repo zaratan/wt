@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createGit } from "../git/exec.js";
 import { provision } from "./run.js";
@@ -134,4 +134,65 @@ describe("two provisionings of the same worktree", () => {
     );
     expect(reports.filter((one) => one.ok)).toHaveLength(1);
   }, 20_000);
+});
+
+describe("the progress channel", () => {
+  it("announces each step and the command's own output, tagged", async () => {
+    const repo = await makeRepo(sandbox.root, "events");
+    const worktree = join(sandbox.root, "events-wt");
+    await addWorktree(repo, worktree, "feat/e");
+    const git = createGit({ cwd: repo, env });
+    const seen: string[] = [];
+
+    await provision(git, {
+      repoRoot: repo,
+      worktreePath: worktree,
+      env,
+      onEvent: (event) => {
+        seen.push(
+          event.kind === "output" ? `output:${event.line}` : event.kind,
+        );
+      },
+      config: {
+        ...DEFAULT_CONFIG,
+        provision: {
+          copy: [],
+          timeoutMs: 30_000,
+          commands: [{ run: "echo hello", when: "always" }],
+        },
+      },
+    });
+
+    expect(seen).toContain("step-start");
+    expect(seen).toContain("step-done");
+    expect(seen).toContain("output:hello");
+  });
+
+  it("emits nothing about steps it skipped beyond saying so", async () => {
+    const repo = await makeRepo(sandbox.root, "skipping");
+    const worktree = join(sandbox.root, "skipping-wt");
+    await addWorktree(repo, worktree, "feat/s");
+    await mkdir(join(worktree, "node_modules"), { recursive: true });
+    const git = createGit({ cwd: repo, env });
+    const outcomes: string[] = [];
+
+    await provision(git, {
+      repoRoot: repo,
+      worktreePath: worktree,
+      env,
+      onEvent: (event) => {
+        if (event.kind === "step-done") outcomes.push(event.outcome);
+      },
+      config: {
+        ...DEFAULT_CONFIG,
+        provision: {
+          copy: [],
+          timeoutMs: 30_000,
+          commands: [{ run: "echo never", when: "if-missing:node_modules" }],
+        },
+      },
+    });
+
+    expect(outcomes).toEqual(["skipped"]);
+  });
 });

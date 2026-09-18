@@ -1,6 +1,14 @@
 import type { OptionValues } from "../cli/parse.js";
 import type { ChooseRepo } from "../lib/git/resolve.js";
 import type { ReviewConfig } from "../lib/config/review.js";
+import type { ProvisionEvent } from "../lib/provision/run.js";
+
+export type ProgressTitle = {
+  repoName: string;
+  branch: string;
+  steps: readonly string[];
+  logPath?: string;
+};
 
 export type CommandContext = {
   cwd: string;
@@ -18,6 +26,11 @@ export type CommandContext = {
   /** Present only when a screen can be shown: absent leaves the `choose` result. */
   chooseRepo?: ChooseRepo;
   reviewConfig?: ReviewConfig;
+  /** Wraps a long run in a live screen, when there is one to draw on. */
+  withProgress?: <T>(
+    title: ProgressTitle,
+    work: (emit: (event: ProvisionEvent) => void) => Promise<T>,
+  ) => Promise<T>;
   /** This process, recorded in the provisioning lock so a dead one is cleared. */
   pid: number;
   trace?: (line: string) => void;

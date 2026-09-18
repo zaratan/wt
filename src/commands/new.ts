@@ -5,6 +5,7 @@ import { createProbes } from "../lib/git/probes.js";
 import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
 import { spaceLabel } from "../lib/config/label.js";
 import { reviewGenerated } from "./review.js";
+import { runProvisioning } from "./provisioning.js";
 import { umbrellaAsker } from "./umbrella.js";
 import { rememberCreation } from "../lib/provision/state.js";
 import { resolveBranch, type BranchPlan } from "../lib/git/branch.js";
@@ -28,7 +29,7 @@ import type { Topology } from "../lib/git/topology.js";
 import { openSpaceFor, type SpaceOutcome } from "./space.js";
 import { configFor } from "./provision.js";
 import { writeGenerated } from "./config.js";
-import { provision, type ProvisionReport } from "../lib/provision/run.js";
+import type { ProvisionReport } from "../lib/provision/run.js";
 import type { CommandContext } from "./context.js";
 
 export type NewInput = {
@@ -284,15 +285,23 @@ export const runNew = async (
         );
 
   const provisioning = input.provision
-    ? await provision(repoGit, {
-        repoRoot: topology.repoRoot,
-        worktreePath,
-        config: loaded.config,
-        env: context.env,
-        pid: context.pid,
-        signal: context.signal,
-        onProgress: context.trace,
-      })
+    ? await runProvisioning(
+        repoGit,
+        {
+          repoRoot: topology.repoRoot,
+          worktreePath,
+          config: loaded.config,
+          env: context.env,
+          pid: context.pid,
+          signal: context.signal,
+        },
+        {
+          repoName: topology.repoName,
+          branch: input.branch,
+          steps: loaded.config.provision.commands.map((one) => one.run),
+        },
+        context,
+      )
     : undefined;
 
   // The space opens either way: a failed provisioning is exactly when a

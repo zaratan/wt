@@ -46,6 +46,16 @@ export type ProvisionReport = {
   blockedBy?: LockHolder;
 };
 
+/**
+ * Tagged, not a string: deriving the current step by sniffing a `$ ` prefix
+ * would be classifying our own output by substring.
+ */
+export type ProvisionEvent =
+  | { kind: "copy"; path: string; outcome: CopyReport["outcome"] }
+  | { kind: "step-start"; run: string; index: number; total: number }
+  | { kind: "step-done"; run: string; outcome: CommandReport["outcome"] }
+  | { kind: "output"; line: string };
+
 export type ProvisionInput = {
   repoRoot: string;
   pid?: number;
@@ -53,7 +63,7 @@ export type ProvisionInput = {
   config: WtConfig;
   env: NodeJS.ProcessEnv;
   signal?: AbortSignal;
-  onProgress?: (line: string) => void;
+  onEvent?: (event: ProvisionEvent) => void;
 };
 
 const exists = async (path: string): Promise<boolean> => {
@@ -157,8 +167,9 @@ export const provision = async (
         continue;
       }
       try {
-        copies.push({ path: relative, outcome: await copyEntry(from, to) });
-        input.onProgress?.(`copied ${relative}`);
+        const outcome = await copyEntry(from, to);
+        copies.push({ path: relative, outcome });
+        input.onEvent?.({ kind: "copy", path: relative, outcome });
       } catch (error) {
         copies.push({
           path: relative,
@@ -182,6 +193,11 @@ export const provision = async (
         !(await shouldRun(step.when, state, step.run, exists, worktreePath))
       ) {
         commands.push({ run: step.run, outcome: "skipped" });
+        input.onEvent?.({
+          kind: "step-done",
+          run: step.run,
+          outcome: "skipped",
+        });
         continue;
       }
 
@@ -209,18 +225,38 @@ export const provision = async (
       }, 2_000);
       heartbeat.unref();
 
+      const announceLast = (): void => {
+        const last = commands.at(-1);
+        if (last !== undefined) {
+          input.onEvent?.({
+            kind: "step-done",
+            run: last.run,
+            outcome: last.outcome,
+          });
+        }
+      };
+
       const ring = createRing(200);
       // Chained rather than fired and forgotten: concurrent appendFile calls
       // interleave, so the log would not match what the command printed.
       let logged: Promise<void> = Promise.resolve();
       const append = (chunk: string): void => {
         ring.push(chunk);
+        const last = ring.lines().at(-1);
+        if (last !== undefined && last.trim() !== "") {
+          input.onEvent?.({ kind: "output", line: last });
+        }
         if (logPath === undefined) return;
         logged = logged.then(() => appendFile(logPath, chunk));
         logged.catch(() => undefined);
       };
 
-      input.onProgress?.(`$ ${step.run}`);
+      input.onEvent?.({
+        kind: "step-start",
+        run: step.run,
+        index: commands.length,
+        total: config.provision.commands.length,
+      });
       const result = await run({
         argv: ["/bin/sh", "-c", step.run],
         cwd: worktreePath,
@@ -242,11 +278,13 @@ export const provision = async (
           tail: ring.lines().slice(-20),
         });
         ok = false;
+        announceLast();
         break;
       }
       if (result.kind === "error") {
         commands.push({ run: step.run, outcome: "failed", tail: ring.lines() });
         ok = false;
+        announceLast();
         break;
       }
       if (result.outcome.timedOut) {
@@ -256,6 +294,7 @@ export const provision = async (
           tail: ring.lines(),
         });
         ok = false;
+        announceLast();
         break;
       }
       if (result.outcome.code !== 0) {
@@ -266,11 +305,13 @@ export const provision = async (
           tail: ring.lines().slice(-20),
         });
         ok = false;
+        announceLast();
         break;
       }
 
       if (step.when === "once") onceDone.push(step.run);
       commands.push({ run: step.run, outcome: "ran" });
+      input.onEvent?.({ kind: "step-done", run: step.run, outcome: "ran" });
     }
 
     const stopped = commands.find(

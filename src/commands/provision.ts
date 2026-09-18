@@ -12,7 +12,8 @@ import {
   type FileProbe,
 } from "../lib/config/detect.js";
 import { generateConfig } from "../lib/config/generate.js";
-import { provision, type ProvisionReport } from "../lib/provision/run.js";
+import type { ProvisionReport } from "../lib/provision/run.js";
+import { runProvisioning } from "./provisioning.js";
 import type { WtConfig } from "../lib/config/schema.js";
 import type { Topology } from "../lib/git/topology.js";
 import { gitFor } from "./ls.js";
@@ -200,14 +201,22 @@ export const runProvision = async (
   return {
     kind: "ok",
     worktreePath: entry.path,
-    report: await provision(repoGit, {
-      repoRoot: topology.repoRoot,
-      worktreePath: entry.path,
-      config: config.config,
-      env: context.env,
-      pid: context.pid,
-      signal: context.signal,
-      onProgress: context.trace,
-    }),
+    report: await runProvisioning(
+      repoGit,
+      {
+        repoRoot: topology.repoRoot,
+        worktreePath: entry.path,
+        config: config.config,
+        env: context.env,
+        pid: context.pid,
+        signal: context.signal,
+      },
+      {
+        repoName: topology.repoName,
+        branch: entry.branch ?? input.branch,
+        steps: config.config.provision.commands.map((one) => one.run),
+      },
+      context,
+    ),
   };
 };

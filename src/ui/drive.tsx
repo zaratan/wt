@@ -1,8 +1,10 @@
 import { PickRepo } from "./screens/PickRepo.js";
 import { ConfigReviewScreen } from "./screens/ConfigReview.js";
 import { Confirm } from "./screens/Confirm.js";
+import { watchProgress } from "./watch.js";
 import { prompt, type InkHeld } from "./prompt.js";
 import type { ChooseRepo } from "../lib/git/resolve.js";
+import type { CommandContext } from "../commands/context.js";
 import type { ConfigDecision, ReviewConfig } from "../lib/config/review.js";
 
 /**
@@ -15,7 +17,9 @@ export const interactiveResolvers = (
   chooseRepo: ChooseRepo;
   reviewConfig: ReviewConfig;
   confirm: (question: string) => Promise<boolean>;
+  withProgress: NonNullable<CommandContext["withProgress"]>;
 } => ({
+  withProgress: (title, work) => watchProgress(title, work, held),
   // Ink, not readline: mixing the two in one command hands stdin back and forth
   // between a line reader and a raw-mode consumer, and whatever is left in the
   // buffer lands in whichever mounts next.
