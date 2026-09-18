@@ -22,6 +22,7 @@ const contextAt = (cwd: string, overrides: Partial<CommandContext> = {}) =>
     verbose: false,
     dryRun: false,
     interactive: false,
+    pid: process.pid,
     ...overrides,
   }) satisfies CommandContext;
 

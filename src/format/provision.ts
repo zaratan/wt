@@ -1,9 +1,20 @@
 import type { ProvisionReport } from "../lib/provision/run.js";
 
+export const interruptedIn = (report: ProvisionReport): boolean =>
+  report.commands.some((command) => command.outcome === "interrupted");
+
 export const provisionLines = (
   report: ProvisionReport | undefined,
 ): string[] => {
   if (report === undefined) return [];
+
+  const blocked = report.blockedBy;
+  if (blocked !== undefined) {
+    return [
+      `  another wt (pid ${String(blocked.pid)}) is already provisioning this worktree`,
+      `  started ${blocked.since}`,
+    ];
+  }
 
   const lines: string[] = [];
   const copied = report.copies.filter((entry) => entry.outcome === "copied");
@@ -35,6 +46,15 @@ export const provisionLines = (
           lines.push(`      ${line}`);
         }
         break;
+      case "interrupted":
+        lines.push(`  ! ${command.run} interrupted`);
+        break;
+      default: {
+        // An outcome with no branch printed nothing at all: `interrupted`
+        // vanished this way, leaving `wt new` announcing a plain success.
+        const unhandled: never = command.outcome;
+        lines.push(`  ! ${command.run}: ${String(unhandled)}`);
+      }
     }
   }
 
@@ -46,6 +66,12 @@ export const provisionLines = (
 
 export const renderProvision = (report: ProvisionReport): string =>
   `${[
-    report.ok ? "Provisioned." : "Provisioning failed.",
+    report.ok
+      ? "Provisioned."
+      : report.blockedBy !== undefined
+        ? "Not provisioned: another wt holds it."
+        : interruptedIn(report)
+          ? "Provisioning interrupted."
+          : "Provisioning failed.",
     ...provisionLines(report),
   ].join("\n")}\n`;

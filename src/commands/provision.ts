@@ -163,6 +163,8 @@ export const runProvision = async (
       worktreePath: entry.path,
       config: config.config,
       env: context.env,
+      pid: context.pid,
+      signal: context.signal,
       onProgress: context.trace,
     }),
   };

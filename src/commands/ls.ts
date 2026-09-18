@@ -34,6 +34,7 @@ export const gitFor = (context: CommandContext, cwd: string): Git => {
   return createGit({
     cwd,
     env: context.env,
+    signal: context.signal,
     trace:
       trace === undefined
         ? undefined

@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  candidateSocketPaths,
-  socketWasPinned,
-  supports,
-} from "./preflight.js";
+import { candidateSocketPaths, socketWasPinned } from "./preflight.js";
 
 describe("candidateSocketPaths", () => {
   it("uses the default socket when nothing is pinned", () => {
@@ -33,17 +29,5 @@ describe("socketWasPinned", () => {
     expect(socketWasPinned({ HERDR_SOCKET_PATH: "/x.sock" })).toBe(true);
     expect(socketWasPinned({ HERDR_SOCKET_PATH: "" })).toBe(false);
     expect(socketWasPinned({})).toBe(false);
-  });
-});
-
-describe("supports", () => {
-  it("reads a capability rather than a protocol number", () => {
-    const pong = {
-      protocol: 22,
-      capabilities: { live_handoff: true, old: false },
-    };
-    expect(supports(pong, "live_handoff")).toBe(true);
-    expect(supports(pong, "old")).toBe(false);
-    expect(supports(pong, "absent")).toBe(false);
   });
 });

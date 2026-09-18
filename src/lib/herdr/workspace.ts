@@ -1,3 +1,4 @@
+import { canonical } from "../fs/canonical.js";
 import type { HerdrClient } from "./socket.js";
 import {
   collectPaneIds,
@@ -61,9 +62,16 @@ export const findSpaceFor = async (
 ): Promise<WorkspaceInfo | undefined> => {
   const listed = await client.call<WorkspaceListResult>("workspace.list");
   if (listed.kind !== "ok") return undefined;
-  return listed.result.workspaces.find(
-    (workspace) => workspace.worktree?.checkout_path === worktreePath,
+  const wanted = await canonical(worktreePath);
+  const matches = await Promise.all(
+    listed.result.workspaces.map(async (workspace) => {
+      const path = workspace.worktree?.checkout_path;
+      return path !== undefined && (await canonical(path)) === wanted
+        ? workspace
+        : undefined;
+    }),
   );
+  return matches.find((workspace) => workspace !== undefined);
 };
 
 /** A herdr agent name: lowercase, and unique among the living ones. */

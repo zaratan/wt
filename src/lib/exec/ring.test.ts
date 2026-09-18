@@ -56,3 +56,25 @@ describe("createRing", () => {
     expect(ring.lines()).toEqual(["a"]);
   });
 });
+
+describe("a progress bar that never prints a newline", () => {
+  it("keeps only what a terminal would show, instead of growing without bound", () => {
+    const ring = createRing(10);
+    for (let step = 0; step <= 5_000; step += 1) {
+      ring.push(`\rprogress ${String(step)}%`);
+    }
+    expect(ring.lines()).toEqual(["progress 5000%"]);
+  });
+
+  it("treats CRLF as one line break, not as a redraw", () => {
+    const ring = createRing(10);
+    ring.push("first\r\nsecond\r\n");
+    expect(ring.lines()).toEqual(["first", "second"]);
+  });
+
+  it("keeps only the last redraw of a line that did end with a newline", () => {
+    const ring = createRing(10);
+    ring.push("a\rb\rc\ndone\n");
+    expect(ring.lines()).toEqual(["c", "done"]);
+  });
+});

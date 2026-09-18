@@ -56,6 +56,8 @@ switch (result.kind) {
       !json &&
       !flag(options, "yes", false);
 
+    const aborter = new AbortController();
+
     const context: CommandContext = {
       cwd:
         cwdOverride === undefined
@@ -75,6 +77,8 @@ switch (result.kind) {
               question,
             )
         : undefined,
+      signal: aborter.signal,
+      pid: process.pid,
       trace: verbose
         ? (line) => {
             process.stderr.write(`${line}\n`);
@@ -82,10 +86,24 @@ switch (result.kind) {
         : undefined,
     };
 
+    // First Ctrl-C asks every child to stop and lets the command record what
+    // it did; a second one means the user is done waiting.
+    const interrupt = { requested: false };
+    const onInterrupt = (): void => {
+      if (interrupt.requested) process.exit(EXIT.INTERRUPTED);
+      interrupt.requested = true;
+      process.stderr.write("\nstopping… (Ctrl-C again to quit now)\n");
+      aborter.abort();
+    };
+    process.on("SIGINT", onInterrupt);
+    process.on("SIGTERM", onInterrupt);
+
     const output = await dispatch(result.invocation, context);
+    process.off("SIGINT", onInterrupt);
+    process.off("SIGTERM", onInterrupt);
     if (output.stdout !== undefined) process.stdout.write(output.stdout);
     if (output.stderr !== undefined) process.stderr.write(output.stderr);
-    process.exit(output.code);
+    process.exit(interrupt.requested ? EXIT.INTERRUPTED : output.code);
     break;
   }
 }

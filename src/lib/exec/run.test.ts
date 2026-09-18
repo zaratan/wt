@@ -196,6 +196,34 @@ describe("run", () => {
     expect(Date.now() - started).toBeLessThan(5000);
   });
 
+  it("kills the process group on abort, not only on timeout", async () => {
+    const marker = `wt-abort-${String(Date.now())}`;
+    const controller = new AbortController();
+    setTimeout(() => {
+      controller.abort();
+    }, 200).unref();
+
+    const result = await run({
+      argv: sh(`sleep 8; : ${marker}`),
+      cwd: dir,
+      env,
+      signal: controller.signal,
+      killProcessGroup: true,
+      killGraceMs: 2_000,
+    });
+    expect(result.kind === "ok" && result.outcome.aborted).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const survivors = await run({
+      argv: ["/usr/bin/pgrep", "-f", marker],
+      cwd: dir,
+      env,
+      timeoutMs: 2_000,
+    });
+    if (survivors.kind !== "ok") throw new Error("expected pgrep to run");
+    expect(survivors.outcome.stdout.trim()).toBe("");
+  });
+
   it("kills a grandchild that traps SIGTERM instead of answering and leaking it", async () => {
     const marker = `wt-probe-${String(Date.now())}`;
     const result = await run({

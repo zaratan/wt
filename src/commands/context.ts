@@ -11,5 +11,9 @@ export type CommandContext = {
   interactive: boolean;
   /** Present only on a terminal that may be questioned: absent means "no". */
   confirm?: (question: string) => Promise<boolean>;
+  /** Aborted on SIGINT, so a killed command still gets to record its state. */
+  signal?: AbortSignal;
+  /** This process, recorded in the provisioning lock so a dead one is cleared. */
+  pid: number;
   trace?: (line: string) => void;
 };

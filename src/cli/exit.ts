@@ -5,6 +5,8 @@ export const EXIT = {
   USAGE: 2,
   /** The worktree exists but is not ready: an agent branches on this. */
   PARTIAL: 3,
+  /** Killed by Ctrl-C, after unwinding. 128 + SIGINT, what a shell expects. */
+  INTERRUPTED: 130,
 } as const;
 
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT];

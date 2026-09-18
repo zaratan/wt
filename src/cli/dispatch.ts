@@ -4,6 +4,7 @@ import { runLs } from "../commands/ls.js";
 import { runStatus } from "../commands/status.js";
 import { runRm } from "../commands/rm.js";
 import { runOpen } from "../commands/open.js";
+import { spaceIsReady } from "../commands/space.js";
 import { runProvision } from "../commands/provision.js";
 import { runConfig, type ConfigAction } from "../commands/config.js";
 import type { CommandContext } from "../commands/context.js";
@@ -73,8 +74,7 @@ export const dispatch = async (
       // than "nothing happened".
       const incomplete =
         result.kind === "created" &&
-        (result.provisioning?.ok === false ||
-          (result.space !== undefined && result.space.kind !== "opened"));
+        (result.provisioning?.ok === false || !spaceIsReady(result.space));
       return { stdout: text, code: incomplete ? EXIT.PARTIAL : EXIT.OK };
     }
 
@@ -150,19 +150,23 @@ export const dispatch = async (
         context,
       );
 
+      const openCode =
+        result.kind === "error" || result.kind === "choose"
+          ? EXIT.ERROR
+          : result.kind === "opened" && !spaceIsReady(result.space)
+            ? EXIT.PARTIAL
+            : EXIT.OK;
+
       if (context.json) {
         return {
           stdout: `${JSON.stringify(result, null, 2)}\n`,
-          code:
-            result.kind === "error" || result.kind === "choose"
-              ? EXIT.ERROR
-              : EXIT.OK,
+          code: openCode,
         };
       }
       const text = renderOpen(result);
       return result.kind === "error" || result.kind === "choose"
-        ? { stderr: text, code: EXIT.ERROR }
-        : { stdout: text, code: EXIT.OK };
+        ? { stderr: text, code: openCode }
+        : { stdout: text, code: openCode };
     }
 
     case "config": {

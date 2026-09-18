@@ -13,6 +13,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { run } from "../exec/run.js";
 import { scrubEnv } from "../exec/env.js";
 import { createRing } from "../exec/ring.js";
+import { acquire, type LockHolder } from "./lock.js";
 import type { WtConfig } from "../config/schema.js";
 import {
   readState,
@@ -31,7 +32,7 @@ export type CopyReport = {
 
 export type CommandReport = {
   run: string;
-  outcome: "ran" | "skipped" | "failed" | "timed-out";
+  outcome: "ran" | "skipped" | "failed" | "timed-out" | "interrupted";
   code?: number;
   tail?: readonly string[];
 };
@@ -41,10 +42,13 @@ export type ProvisionReport = {
   commands: readonly CommandReport[];
   ok: boolean;
   logPath?: string;
+  /** Set when another wt was already provisioning this worktree. */
+  blockedBy?: LockHolder;
 };
 
 export type ProvisionInput = {
   repoRoot: string;
+  pid?: number;
   worktreePath: string;
   config: WtConfig;
   env: NodeJS.ProcessEnv;
@@ -112,13 +116,30 @@ export const provision = async (
   const path = await statePath(git, worktreePath);
   const logPath = path === undefined ? undefined : `${path}.log`;
 
+  const lock =
+    path === undefined
+      ? undefined
+      : await acquire(`${path}.lock`, input.pid ?? 0);
+  if (lock?.kind === "taken") {
+    return { copies: [], commands: [], ok: false, blockedBy: lock.by };
+  }
+
   const state: WorktreeState =
     path === undefined
       ? { schema: 1, provision: { state: "ok", onceDone: [] } }
       : await readState(path);
 
-  const save = async (next: WorktreeState): Promise<void> => {
-    if (path !== undefined) await writeState(path, next);
+  // Serialised, and the chain never rejects: fired-and-forgotten heartbeats
+  // would otherwise land after the final write and leave the worktree marked
+  // `running` forever, and one failed write would silence every later one.
+  let writes: Promise<void> = Promise.resolve();
+  const save = (next: WorktreeState): Promise<void> => {
+    writes = writes
+      .then(async () => {
+        if (path !== undefined) await writeState(path, next);
+      })
+      .catch(() => undefined);
+    return writes;
   };
 
   const copies: CopyReport[] = [];
@@ -186,9 +207,14 @@ export const provision = async (
     heartbeat.unref();
 
     const ring = createRing(200);
-    const append = async (chunk: string): Promise<void> => {
+    // Chained rather than fired and forgotten: concurrent appendFile calls
+    // interleave, so the log would not match what the command printed.
+    let logged: Promise<void> = Promise.resolve();
+    const append = (chunk: string): void => {
       ring.push(chunk);
-      if (logPath !== undefined) await appendFile(logPath, chunk);
+      if (logPath === undefined) return;
+      logged = logged.then(() => appendFile(logPath, chunk));
+      logged.catch(() => undefined);
     };
 
     input.onProgress?.(`$ ${step.run}`);
@@ -200,11 +226,21 @@ export const provision = async (
       signal: input.signal,
       capture: false,
       killProcessGroup: true,
-      onStdout: (chunk) => void append(chunk),
-      onStderr: (chunk) => void append(chunk),
+      onStdout: append,
+      onStderr: append,
     });
     clearInterval(heartbeat);
+    await logged.catch(() => undefined);
 
+    if (result.kind === "ok" && result.outcome.aborted) {
+      commands.push({
+        run: step.run,
+        outcome: "interrupted",
+        tail: ring.lines().slice(-20),
+      });
+      ok = false;
+      break;
+    }
     if (result.kind === "error") {
       commands.push({ run: step.run, outcome: "failed", tail: ring.lines() });
       ok = false;
@@ -234,20 +270,28 @@ export const provision = async (
     commands.push({ run: step.run, outcome: "ran" });
   }
 
-  const failed = commands.find(
-    (entry) => entry.outcome === "failed" || entry.outcome === "timed-out",
+  const stopped = commands.find(
+    (entry) =>
+      entry.outcome === "failed" ||
+      entry.outcome === "timed-out" ||
+      entry.outcome === "interrupted",
   );
 
   await save({
     ...state,
     provision: {
-      state: ok ? "ok" : "failed",
-      failedStep: failed?.run,
+      state: ok
+        ? "ok"
+        : stopped?.outcome === "interrupted"
+          ? "interrupted"
+          : "failed",
+      failedStep: stopped?.run,
       onceDone,
       startedAt: state.provision.startedAt,
       heartbeatAt: undefined,
     },
   });
 
+  if (lock?.kind === "held") await lock.release();
   return { copies, commands, ok, logPath };
 };

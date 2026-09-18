@@ -17,6 +17,7 @@ const contextWith = (overrides: Partial<CommandContext>) =>
     verbose: false,
     dryRun: false,
     interactive: true,
+    pid: process.pid,
     ...overrides,
   }) satisfies CommandContext;
 

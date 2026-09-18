@@ -181,7 +181,13 @@ de travail), pas déduit du schéma.
   mais il ne sert pas en pratique.
 - `layout.apply` n'a **pas** de sous-commande CLI : le client socket est une
   nécessité, pas une optimisation.
-- Gater sur les **capabilities** du `ping`, jamais sur `protocol === 22` : un numéro
-  qui bouge à chaque `brew upgrade` produit un warning ignoré en trois semaines.
+- **Les capabilities du `ping` ne nomment aucune méthode.** Mesuré sur 0.9.1 :
+  `live_handoff`, `detached_server_daemon`, `endpoint_protocol_generation`,
+  `surface_interest`, `health_check`. Rien sur `layout.apply`, `worktree.open`,
+  `agent.start` ni `pane.run`. On ne peut donc pas gater dessus ce que `wt`
+  appelle, et gater sur `protocol === 22` reste exclu : un numéro qui bouge à
+  chaque `brew upgrade` produit un warning ignoré en trois semaines. Le seul
+  vrai garde-fou est **l'erreur renvoyée par l'appel**, traitée par le chemin
+  générique. `wt doctor` liste les capabilities pour qu'une évolution se voie.
 - Les codes d'erreur herdr sont des **chaînes libres**, non énumérées dans le schéma.
   Tout code inconnu passe par le chemin générique « rapporter et laisser trancher ».

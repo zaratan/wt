@@ -1,7 +1,7 @@
 import { relative } from "node:path";
 import type { NewPlan, NewResult } from "../commands/new.js";
 import { spaceLines } from "./space.js";
-import { provisionLines } from "./provision.js";
+import { interruptedIn, provisionLines } from "./provision.js";
 
 const shorten = (path: string, base: string): string => {
   const rel = relative(base, path);
@@ -70,7 +70,14 @@ export const renderNew = (result: NewResult, cwd: string): string => {
       break;
 
     case "created":
-      lines.push("Created:", ...planLines(result.plan, cwd));
+      lines.push(
+        result.provisioning !== undefined &&
+          (interruptedIn(result.provisioning) ||
+            result.provisioning.blockedBy !== undefined)
+          ? "Created, but stopped before it was ready:"
+          : "Created:",
+        ...planLines(result.plan, cwd),
+      );
       if (result.ignore?.kind === "added") {
         lines.push(`  ignored /.worktrees/ in ${result.ignore.file}`);
       }

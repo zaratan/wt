@@ -28,6 +28,18 @@ const manualCommands = (input: SpaceInput): readonly string[] => [
   `herdr worktree open --cwd ${input.topology.repoRoot} --path ${input.worktreePath} --label "${input.label}"`,
 ];
 
+/**
+ * A space whose layout was refused is not ready, even though `worktree.open`
+ * succeeded. Focus is the exception: failing to raise a window costs nothing.
+ */
+export const spaceIsReady = (outcome: SpaceOutcome | undefined): boolean => {
+  if (outcome === undefined) return true;
+  if (outcome.kind !== "opened") return false;
+  return outcome.result.steps.every(
+    (step) => step.ok || step.step === "workspace.focus",
+  );
+};
+
 export const openSpaceFor = async (
   input: SpaceInput,
   context: CommandContext,

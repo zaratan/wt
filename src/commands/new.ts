@@ -90,6 +90,7 @@ export const runNew = async (
   const git = createGit({
     cwd: context.cwd,
     env: context.env,
+    signal: context.signal,
     trace:
       trace === undefined
         ? undefined
@@ -128,6 +129,7 @@ export const runNew = async (
   const repoGit = createGit({
     cwd: topology.repoRoot,
     env: context.env,
+    signal: context.signal,
     trace:
       trace === undefined
         ? undefined
@@ -276,6 +278,8 @@ export const runNew = async (
         worktreePath,
         config: loaded.config,
         env: context.env,
+        pid: context.pid,
+        signal: context.signal,
         onProgress: context.trace,
       })
     : undefined;

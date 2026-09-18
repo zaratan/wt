@@ -107,12 +107,3 @@ export const preflight = async (
     triedPaths: tried,
   };
 };
-
-/**
- * Gate on capabilities, never on a protocol number: that number moves with
- * every upgrade and produces a warning nobody reads three weeks later.
- */
-export const supports = (pong: Pong, capability: string): boolean => {
-  const value = pong.capabilities?.[capability];
-  return value === true || typeof value === "object";
-};

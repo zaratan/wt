@@ -63,6 +63,12 @@ export const renderDoctor = (report: DoctorReport): string => {
       ? `  ${label("herdr")}${report.herdr.version ?? "?"} on ${report.herdr.socketPath}`
       : `  ${label("herdr")}not answering — ${report.herdr.message}`,
   );
+  if (report.herdr.kind === "ok" && report.herdr.capabilities.length > 0) {
+    lines.push(
+      `  ${label("")}capabilities: ${report.herdr.capabilities.join(", ")}`,
+    );
+  }
+
   if (report.herdr.kind === "down") {
     for (const path of report.herdr.triedPaths) {
       lines.push(`  ${label("")}tried ${path}`);

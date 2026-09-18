@@ -1,5 +1,6 @@
 import { preflight } from "../lib/herdr/preflight.js";
 import { listSpaces } from "../lib/herdr/workspace.js";
+import { canonical } from "../lib/fs/canonical.js";
 import type { CommandContext } from "./context.js";
 
 export type OpenSpace = { label?: string; focused: boolean };
@@ -36,10 +37,11 @@ export const indexSpaces = async (
   for (const space of spaces) {
     const path = space.worktree?.checkout_path;
     if (path === undefined) continue;
-    byCheckout.set(path, {
-      label: space.label,
-      focused: space.focused === true,
-    });
+    const open = { label: space.label, focused: space.focused === true };
+    // herdr's spelling and git's need not match: on macOS /tmp is /private/tmp.
+    // Both are keys, so a lookup by either one finds the space.
+    byCheckout.set(path, open);
+    byCheckout.set(await canonical(path), open);
   }
   return { byCheckout };
 };
