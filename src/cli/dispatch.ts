@@ -3,6 +3,7 @@ import { runNew } from "../commands/new.js";
 import { runLs } from "../commands/ls.js";
 import { runStatus } from "../commands/status.js";
 import { runRm } from "../commands/rm.js";
+import { runOpen } from "../commands/open.js";
 import type { CommandContext } from "../commands/context.js";
 import { renderDoctor } from "../format/doctor.js";
 import { renderNew } from "../format/new.js";
@@ -10,6 +11,7 @@ import { renderLs } from "../format/ls.js";
 import { renderStatus } from "../format/status.js";
 import { renderRm } from "../format/rm.js";
 import { checkLayout } from "../format/layout.js";
+import { renderOpen } from "../format/open.js";
 import { EXIT } from "./exit.js";
 import type { ExitCode } from "./exit.js";
 import { flag, value } from "./parse.js";
@@ -40,6 +42,9 @@ export const dispatch = async (
           fetch: flag(invocation.options, "fetch", true),
           gitignore: flag(invocation.options, "gitignore", true),
           forceUmbrella: invocation.options.umbrella as boolean | undefined,
+          open: flag(invocation.options, "open", true),
+          focus: flag(invocation.options, "focus", context.interactive),
+          layout: value(invocation.options, "layout"),
         },
         context,
       );
@@ -82,6 +87,36 @@ export const dispatch = async (
         : { stderr: text, code: EXIT.ERROR };
     }
 
+    case "open": {
+      const target = invocation.positionals.target;
+      if (target === undefined) {
+        return { stderr: "wt open: missing <target>\n", code: EXIT.USAGE };
+      }
+      const result = await runOpen(
+        {
+          repo: value(invocation.options, "repo"),
+          target,
+          focus: flag(invocation.options, "focus", context.interactive),
+          layout: value(invocation.options, "layout"),
+        },
+        context,
+      );
+
+      if (context.json) {
+        return {
+          stdout: `${JSON.stringify(result, null, 2)}\n`,
+          code:
+            result.kind === "error" || result.kind === "choose"
+              ? EXIT.ERROR
+              : EXIT.OK,
+        };
+      }
+      const text = renderOpen(result);
+      return result.kind === "error" || result.kind === "choose"
+        ? { stderr: text, code: EXIT.ERROR }
+        : { stdout: text, code: EXIT.OK };
+    }
+
     case "layout": {
       const dsl = invocation.positionals.dsl;
       if (dsl === undefined) {
@@ -107,6 +142,7 @@ export const dispatch = async (
           deleteBranch: invocation.options["delete-branch"] as
             | boolean
             | undefined,
+          keepSpace: flag(invocation.options, "keep-space", false),
         },
         context,
       );

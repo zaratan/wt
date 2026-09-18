@@ -25,7 +25,7 @@ const contextAt = (cwd: string, overrides: Partial<CommandContext> = {}) =>
     ...overrides,
   }) satisfies CommandContext;
 
-const defaults = { fetch: false, gitignore: true };
+const defaults = { fetch: false, gitignore: true, open: false, focus: false };
 
 const expectCreated = (result: NewResult) => {
   if (result.kind !== "created") {

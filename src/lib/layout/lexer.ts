@@ -135,18 +135,34 @@ export const lex = (source: string): LexResult => {
     }
 
     if (source[index] === "@") {
-      const colon = source.indexOf(":", index);
-      if (colon === -1) {
-        return {
-          kind: "error",
-          error: layoutError(
-            "a target must be written '@parent:' or '@wt:'",
-            index,
-            "the colon is missing",
-          ),
-        };
+      let after = index + 1;
+      while (/[A-Za-z]/.test(source[after] ?? "")) after += 1;
+      const name = source.slice(index + 1, after);
+
+      // `@wt` with no colon is a bare shell there, which is the common case.
+      if (source[after] !== ":") {
+        if (!TARGETS.includes(name as Target)) {
+          return {
+            kind: "error",
+            error: layoutError(
+              `unknown target '@${name}'`,
+              index,
+              `use ${TARGETS.map((target) => `@${target}`).join(" or ")}`,
+            ),
+          };
+        }
+        tokens.push({ kind: "target", value: name, start: index, end: after });
+        tokens.push({
+          kind: "command",
+          value: "shell",
+          start: after,
+          end: after,
+        });
+        index = after;
+        continue;
       }
-      const name = source.slice(index + 1, colon);
+
+      const colon = after;
       if (!TARGETS.includes(name as Target)) {
         return {
           kind: "error",

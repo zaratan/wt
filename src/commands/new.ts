@@ -21,6 +21,7 @@ import {
 } from "../lib/git/worktree.js";
 import { WORKTREES_DIR, violatedGuards } from "../lib/git/topology.js";
 import type { Topology } from "../lib/git/topology.js";
+import { openSpaceFor, type SpaceOutcome } from "./space.js";
 import type { CommandContext } from "./context.js";
 
 export type NewInput = {
@@ -31,6 +32,9 @@ export type NewInput = {
   fetch: boolean;
   gitignore: boolean;
   forceUmbrella?: boolean;
+  open: boolean;
+  focus: boolean;
+  layout?: string;
 };
 
 export type NewPlan = {
@@ -51,8 +55,14 @@ export type NewResult =
       notices: readonly string[];
       ignore?: IgnoreOutcome;
       submodules?: { ok: boolean; message?: string };
+      space?: SpaceOutcome;
     }
-  | { kind: "exists"; plan: NewPlan; notices: readonly string[] }
+  | {
+      kind: "exists";
+      plan: NewPlan;
+      notices: readonly string[];
+      space?: SpaceOutcome;
+    }
   | {
       kind: "choose";
       from: string;
@@ -181,7 +191,26 @@ export const runNew = async (
     willInitSubmodules: await hasSubmodules(repoGit, topology.repoRoot),
   };
 
-  if (holdsOurBranch) return { kind: "exists", plan, notices };
+  if (holdsOurBranch) {
+    return {
+      kind: "exists",
+      plan,
+      notices,
+      space: input.open
+        ? await openSpaceFor(
+            {
+              topology,
+              worktreePath,
+              label: plan.label,
+              layoutSource: input.layout,
+              focus: input.focus,
+              runCommands: true,
+            },
+            context,
+          )
+        : undefined,
+    };
+  }
 
   if (branchResolution.kind === "occupied") {
     const isLinked = branchResolution.by !== topology.repoRoot;
@@ -211,5 +240,21 @@ export const runNew = async (
     ? await initSubmodules(repoGit, worktreePath)
     : undefined;
 
-  return { kind: "created", plan, notices, ignore, submodules };
+  // Provisioning lands in phase 6; until then commands are safe to type
+  // straight away.
+  const space = input.open
+    ? await openSpaceFor(
+        {
+          topology,
+          worktreePath,
+          label: plan.label,
+          layoutSource: input.layout,
+          focus: input.focus,
+          runCommands: true,
+        },
+        context,
+      )
+    : undefined;
+
+  return { kind: "created", plan, notices, ignore, submodules, space };
 };

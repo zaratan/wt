@@ -201,3 +201,30 @@ describe("preview", () => {
     expect(drawing.split("\n").length).toBeGreaterThan(5);
   });
 });
+
+describe("bare targets", () => {
+  it("reads @wt as a shell in the worktree", () => {
+    const leaf = leaves(parseOk("@wt"))[0];
+    expect(leaf?.target).toBe("wt");
+    expect(leaf?.command).toBe("shell");
+  });
+
+  it("reads @parent as a shell in the parent", () => {
+    const leaf = leaves(parseOk("@parent"))[0];
+    expect(leaf?.target).toBe("parent");
+    expect(leaf?.command).toBe("shell");
+  });
+
+  it("mixes bare and explicit targets", () => {
+    const root = parseOk("(@parent:claude | (@wt _ @wt:bin/dev))");
+    expect(leaves(root).map((leaf) => leaf.command)).toEqual([
+      "claude",
+      "shell",
+      "bin/dev",
+    ]);
+  });
+
+  it("still rejects an unknown bare target", () => {
+    expect(parseErr("@nope").message).toContain("unknown target");
+  });
+});

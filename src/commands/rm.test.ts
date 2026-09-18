@@ -32,7 +32,7 @@ const contextAt = (cwd: string, overrides: Partial<CommandContext> = {}) =>
 
 const addWorktreeTo = async (repo: string, branch: string): Promise<string> => {
   const created = await runNew(
-    { branch, fetch: false, gitignore: false },
+    { branch, fetch: false, gitignore: false, open: false, focus: false },
     contextAt(repo),
   );
   if (created.kind !== "created") throw new Error(`setup: ${created.kind}`);
@@ -156,7 +156,13 @@ describe("wt rm", () => {
   it("lists the unpublished commits rather than just counting them", async () => {
     const { clone } = await makeSingleBranchClone(sandbox.root, "unpub-rm");
     const created = await runNew(
-      { branch: "feat/work", fetch: false, gitignore: false },
+      {
+        branch: "feat/work",
+        fetch: false,
+        gitignore: false,
+        open: false,
+        focus: false,
+      },
       contextAt(clone),
     );
     if (created.kind !== "created") throw new Error("setup");

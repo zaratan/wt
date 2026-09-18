@@ -18,15 +18,20 @@ export type HerdrHealth =
  * The socket belongs to the invocation, never to stored state: a worktree
  * created under one named session and reopened from another would otherwise
  * aim at a dead socket.
+ *
+ * An explicit HERDR_SOCKET_PATH is the ONLY candidate. Falling back to the
+ * default socket when it is dead silently opens spaces in whichever session
+ * happens to be running — it did, in another session's window.
  */
 export const candidateSocketPaths = (env: NodeJS.ProcessEnv): string[] => {
   const fromEnv = env.HERDR_SOCKET_PATH;
+  if (fromEnv !== undefined && fromEnv !== "") return [fromEnv];
   const home = env.HOME ?? homedir();
-  const fallback = join(home, ".config", "herdr", "herdr.sock");
-  return fromEnv === undefined || fromEnv === ""
-    ? [fallback]
-    : [fromEnv, fallback];
+  return [join(home, ".config", "herdr", "herdr.sock")];
 };
+
+export const socketWasPinned = (env: NodeJS.ProcessEnv): boolean =>
+  env.HERDR_SOCKET_PATH !== undefined && env.HERDR_SOCKET_PATH !== "";
 
 export const socketFromStatus = async (
   env: NodeJS.ProcessEnv,
@@ -78,7 +83,11 @@ export const preflight = async (
     if (health !== undefined) return health;
   }
 
-  const fromStatus = await socketFromStatus(options.env, options.cwd);
+  // `herdr status` answers for the default session, so asking it would
+  // undo the pin just as surely.
+  const fromStatus = socketWasPinned(options.env)
+    ? undefined
+    : await socketFromStatus(options.env, options.cwd);
   if (fromStatus !== undefined && !tried.includes(fromStatus)) {
     const health = await attempt(fromStatus);
     if (health !== undefined) return health;

@@ -61,7 +61,7 @@ const LAYOUT_OPTION: OptionSpec = {
   arity: "required",
   placeholder: "<dsl>",
   group: "behaviour",
-  help: 'Pane layout, e.g. "(@parent:claude | (@wt:shell _ @wt:bin/dev))"',
+  help: 'Pane layout, e.g. "(@parent:claude | (@wt _ @wt:bin/dev))"; a bare @wt is a shell',
 };
 
 export const GLOBAL_OPTIONS: readonly OptionSpec[] = [

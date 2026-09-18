@@ -2,6 +2,8 @@ import { createProbes } from "../lib/git/probes.js";
 import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
 import { worktreeStatus, type WorktreeStatus } from "../lib/git/status.js";
 import { prune } from "../lib/git/worktree.js";
+import { preflight } from "../lib/herdr/preflight.js";
+import { closeSpace, findSpaceFor } from "../lib/herdr/workspace.js";
 import type { Topology } from "../lib/git/topology.js";
 import { gitFor } from "./ls.js";
 import { matchesTarget } from "./status.js";
@@ -13,7 +15,14 @@ export type RmInput = {
   force: boolean;
   /** Undefined means "keep it", which is the default. */
   deleteBranch?: boolean;
+  keepSpace?: boolean;
 };
+
+export type SpaceClosure =
+  | { kind: "closed"; workspaceId: string }
+  | { kind: "none" }
+  | { kind: "kept" }
+  | { kind: "failed"; detail: string };
 
 export type BranchOutcome =
   | { kind: "kept"; command?: string }
@@ -26,6 +35,7 @@ export type RmResult =
       status: WorktreeStatus;
       branch: BranchOutcome;
       forced: boolean;
+      space: SpaceClosure;
     }
   | { kind: "planned"; status: WorktreeStatus; findings: readonly string[] }
   | { kind: "blocked"; status: WorktreeStatus; findings: readonly string[] }
@@ -94,6 +104,29 @@ const deleteBranch = async (
   };
 };
 
+const closeBoundSpace = async (
+  input: RmInput,
+  worktreePath: string,
+  context: CommandContext,
+): Promise<SpaceClosure> => {
+  if (input.keepSpace === true) return { kind: "kept" };
+
+  const health = await preflight({
+    env: context.env,
+    cwd: context.cwd,
+    trace: context.trace,
+  });
+  if (health.kind !== "ok") return { kind: "none" };
+
+  const existing = await findSpaceFor(health.client, worktreePath);
+  if (existing === undefined) return { kind: "none" };
+
+  const closed = await closeSpace(health.client, existing.workspace_id);
+  return closed.ok
+    ? { kind: "closed", workspaceId: existing.workspace_id }
+    : { kind: "failed", detail: closed.detail ?? "" };
+};
+
 export const runRm = async (
   input: RmInput,
   context: CommandContext,
@@ -152,6 +185,10 @@ export const runRm = async (
     return { kind: "blocked", status, findings: found };
   }
 
+  // Close the space BEFORE removing the checkout: herdr holds panes whose cwd
+  // is about to vanish.
+  const space = await closeBoundSpace(input, entry.path, context);
+
   const removed = await repoGit(
     ["worktree", "remove", ...(input.force ? ["--force"] : []), entry.path],
     { cwd: topology.repoRoot, timeoutMs: 60_000 },
@@ -178,5 +215,5 @@ export const runRm = async (
           };
   }
 
-  return { kind: "removed", status, branch, forced: input.force };
+  return { kind: "removed", status, branch, forced: input.force, space };
 };

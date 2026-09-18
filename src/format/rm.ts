@@ -46,6 +46,19 @@ export const renderRm = (result: RmResult): string => {
       lines.push(
         `Removed ${result.status.path}${result.forced ? "  (forced)" : ""}`,
       );
+      switch (result.space.kind) {
+        case "closed":
+          lines.push(`  space   ${result.space.workspaceId} closed`);
+          break;
+        case "failed":
+          lines.push(`  space   NOT closed: ${result.space.detail}`);
+          break;
+        case "kept":
+          lines.push("  space   left open");
+          break;
+        case "none":
+          break;
+      }
       switch (result.branch.kind) {
         case "deleted":
           lines.push(`  branch  ${result.status.branch ?? ""} deleted`);

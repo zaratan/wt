@@ -1,5 +1,6 @@
 import { relative } from "node:path";
 import type { NewPlan, NewResult } from "../commands/new.js";
+import { spaceLines } from "./space.js";
 
 const shorten = (path: string, base: string): string => {
   const rel = relative(base, path);
@@ -64,6 +65,7 @@ export const renderNew = (result: NewResult, cwd: string): string => {
         "",
         `Open it with \`wt open ${result.plan.branchPlan.branch}\`.`,
       );
+      lines.push(...spaceLines(result.space));
       break;
 
     case "created":
@@ -77,6 +79,7 @@ export const renderNew = (result: NewResult, cwd: string): string => {
       if (result.submodules?.ok === false) {
         lines.push(`  submodules FAILED: ${result.submodules.message ?? ""}`);
       }
+      lines.push(...spaceLines(result.space));
       lines.push("", `  cd ${shorten(result.plan.worktreePath, cwd)}`);
       break;
   }
