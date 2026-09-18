@@ -1,9 +1,14 @@
-import { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { Footer } from "../Footer.js";
 import { spaceNote, type WorktreeRow } from "../../format/rows.js";
 
-export type DashboardAction = "open" | "status" | "remove" | "refresh" | "quit";
+export type DashboardAction =
+  | "open"
+  | "status"
+  | "remove"
+  | "refresh"
+  | "create"
+  | "quit";
 
 export type DashboardProps = {
   repoName: string;
@@ -11,6 +16,8 @@ export type DashboardProps = {
   orphans: readonly string[];
   herdrUnavailable?: string;
   busy?: string;
+  /** What the last action answered, when it was not simply "done". */
+  notice?: string;
   focused: number;
   onFocus: (at: number) => void;
   onAct: (action: DashboardAction, row?: WorktreeRow) => void;
@@ -33,13 +40,14 @@ export const Dashboard = ({
   orphans,
   herdrUnavailable,
   busy,
+  notice,
   focused,
   onFocus,
   onAct,
 }: DashboardProps): React.JSX.Element => {
-  const [width] = useState(() =>
-    Math.max(...rows.map((row) => row.name.length), 8),
-  );
+  // Recomputed, not frozen at mount: the first render has no rows yet, and a
+  // width captured then leaves every name longer than the floor misaligned.
+  const width = Math.max(...rows.map((row) => row.name.length), 8);
   const branchWidth = Math.max(...rows.map((row) => row.branch.length), 6);
 
   useInput((input, key) => {
@@ -60,6 +68,10 @@ export const Dashboard = ({
       onAct("refresh");
       return;
     }
+    if (input === "n") {
+      onAct("create");
+      return;
+    }
     const row = rows[focused];
     if (key.return) onAct("open", row);
     if (input === "s") onAct("status", row);
@@ -70,11 +82,13 @@ export const Dashboard = ({
     <Box flexDirection="column">
       <Box>
         <Text bold>{repoName}</Text>
-        <Text dimColor>
-          {herdrUnavailable === undefined
-            ? "   herdr ok"
-            : `   herdr unreachable: ${herdrUnavailable}`}
-        </Text>
+        <Box flexGrow={1} minWidth={0}>
+          <Text dimColor wrap="truncate-end">
+            {herdrUnavailable === undefined
+              ? "   herdr ok"
+              : `   herdr unreachable: ${herdrUnavailable}`}
+          </Text>
+        </Box>
       </Box>
 
       <Box flexDirection="column" marginTop={1}>
@@ -83,23 +97,33 @@ export const Dashboard = ({
         ) : null}
         {rows.map((row, at) => {
           const glyph = GLYPH[row.severity];
+          // A word in the detail channel, not a glyph in a gap: a lone mark
+          // between two padded columns reads as column furniture.
+          const space = spaceNote(row.space);
           const detail = [
-            ...(spaceNote(row.space) === undefined
-              ? []
-              : [spaceNote(row.space) ?? ""]),
+            ...(row.here ? ["here"] : []),
+            ...(space === undefined ? [] : [space]),
             ...row.notes,
           ].join(", ");
           return (
-            <Text key={row.status.path}>
-              <Text color={at === focused ? "cyan" : undefined}>
-                {at === focused ? "▸ " : "  "}
-              </Text>
-              <Text color={glyph.color}>{glyph.mark}</Text>
-              <Text bold={row.here}>{pad(row.name, width)}</Text>
-              <Text dimColor={!row.here}>{row.here ? " ·" : "  "}</Text>
-              <Text>{` ${pad(row.branch, branchWidth)}`}</Text>
-              <Text dimColor>{detail === "" ? "" : `  ${detail}`}</Text>
-            </Text>
+            // Truncated, never wrapped: one line per worktree is the whole
+            // value of this screen, and it collapses exactly when a row has
+            // something worth reading.
+            <Box key={row.status.path}>
+              <Box flexShrink={0}>
+                <Text color={at === focused ? "cyan" : undefined}>
+                  {at === focused ? "▸ " : "  "}
+                </Text>
+                <Text color={glyph.color}>{glyph.mark}</Text>
+                <Text bold={row.here}>{pad(row.name, width)}</Text>
+                <Text>{`  ${pad(row.branch, branchWidth)}`}</Text>
+              </Box>
+              <Box flexGrow={1} minWidth={0}>
+                <Text dimColor wrap="truncate-end">
+                  {detail === "" ? "" : `  ${detail}`}
+                </Text>
+              </Box>
+            </Box>
           );
         })}
       </Box>
@@ -112,11 +136,22 @@ export const Dashboard = ({
         </Box>
       )}
 
+      {notice === undefined ? null : (
+        <Box marginTop={1} flexDirection="column">
+          {notice.split("\n").map((line, at) => (
+            <Text key={`${String(at)}:${line}`} color="yellow">
+              {line === "" ? " " : line}
+            </Text>
+          ))}
+        </Box>
+      )}
+
       {busy === undefined ? (
         <Footer
           hints={[
             { key: "enter", label: "open" },
             { key: "s", label: "status" },
+            { key: "n", label: "new" },
             { key: "d", label: "remove" },
             { key: "r", label: "refresh" },
             { key: "q", label: "quit" },

@@ -2,6 +2,7 @@ import { render } from "ink";
 import { App } from "./App.js";
 import type { InkHeld, PromptStreams } from "./prompt.js";
 import type { CommandContext } from "../commands/context.js";
+import type { Leaving } from "./App.js";
 
 /**
  * The dashboard owns the terminal for its whole life, unlike a question. It
@@ -12,15 +13,15 @@ export const runDashboard = async (
   base: CommandContext,
   held: InkHeld,
   streams: PromptStreams = {},
-): Promise<string | undefined> => {
-  let leaving: string | undefined;
+): Promise<Leaving> => {
+  let leaving: Leaving = {};
 
   held.current = true;
   const instance = render(
     <App
       base={base}
-      onLeave={(message) => {
-        leaving = message;
+      onLeave={(asked) => {
+        leaving = asked;
       }}
     />,
     { ...streams, exitOnCtrlC: false },

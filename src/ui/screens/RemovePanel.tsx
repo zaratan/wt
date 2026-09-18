@@ -11,7 +11,8 @@ export const RemovePanel = ({
   intent,
   onAnswer,
 }: RemovePanelProps): React.JSX.Element => {
-  const blocked = intent.findings.length > 0;
+  const refused = intent.refused;
+  const blocked = refused !== undefined || intent.findings.length > 0;
 
   useInput((input, key) => {
     if (key.escape || input === "q" || (key.ctrl && input === "c")) {
@@ -24,7 +25,7 @@ export const RemovePanel = ({
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" paddingX={1}>
+    <Box flexDirection="column">
       {blocked ? (
         <Text>
           <Text bold>{intent.row.name}</Text> is not ready to be removed
@@ -36,10 +37,16 @@ export const RemovePanel = ({
       )}
 
       <Box flexDirection="column" marginTop={1}>
-        <Text>
-          {"  worktree  "}
-          <Text dimColor>{intent.row.status.path}</Text>
-        </Text>
+        <Box>
+          <Box flexShrink={0}>
+            <Text>{"  worktree  "}</Text>
+          </Box>
+          <Box flexGrow={1} minWidth={0}>
+            <Text dimColor wrap="truncate-start">
+              {intent.row.status.path}
+            </Text>
+          </Box>
+        </Box>
         {intent.branch === undefined ? null : (
           <Text>
             {"  branch    "}
@@ -55,7 +62,11 @@ export const RemovePanel = ({
         )}
       </Box>
 
-      {blocked ? (
+      {refused !== undefined ? (
+        <Box marginTop={1}>
+          <Text color="yellow">{`  ${refused}`}</Text>
+        </Box>
+      ) : intent.findings.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           {intent.findings.map((finding) => (
             <Text key={finding} color="yellow">{`  ${finding}`}</Text>
@@ -67,11 +78,7 @@ export const RemovePanel = ({
             <Text color="cyan" bold>{`    ${intent.forceCommand}`}</Text>
           </Box>
         </Box>
-      ) : (
-        <Box marginTop={1}>
-          <Text dimColor>{"  Nothing uncommitted, nothing unpublished."}</Text>
-        </Box>
-      )}
+      ) : null}
 
       <Footer
         hints={

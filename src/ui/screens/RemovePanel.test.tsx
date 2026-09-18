@@ -125,3 +125,59 @@ describe("RemovePanel", () => {
     expect(onAnswer).toHaveBeenCalledWith(false);
   });
 });
+
+describe("the main checkout", () => {
+  it("is refused on the panel, before enter is even offered", () => {
+    const row = worktreeRows(
+      [status({ isMain: true, path: "/p/app" })],
+      {},
+      "/elsewhere",
+    )[0];
+    if (row === undefined) throw new Error("no row");
+
+    const { lastFrame } = render(
+      <RemovePanel
+        intent={removalIntent(row, [], DEFAULT_CONFIG)}
+        onAnswer={vi.fn()}
+      />,
+    );
+    expect(lastFrame() ?? "").toContain("main checkout");
+  });
+
+  it("does not offer --force, which cannot lift that refusal", () => {
+    const row = worktreeRows(
+      [status({ isMain: true, path: "/p/app" })],
+      {},
+      "/elsewhere",
+    )[0];
+    if (row === undefined) throw new Error("no row");
+
+    const { lastFrame } = render(
+      <RemovePanel
+        intent={removalIntent(row, [], DEFAULT_CONFIG)}
+        onAnswer={vi.fn()}
+      />,
+    );
+    expect(lastFrame() ?? "").not.toContain("--force");
+  });
+
+  it("does not remove on enter", async () => {
+    const row = worktreeRows(
+      [status({ isMain: true, path: "/p/app" })],
+      {},
+      "/elsewhere",
+    )[0];
+    if (row === undefined) throw new Error("no row");
+    const onAnswer = vi.fn();
+
+    const { stdin } = render(
+      <RemovePanel
+        intent={removalIntent(row, [], DEFAULT_CONFIG)}
+        onAnswer={onAnswer}
+      />,
+    );
+    stdin.write("\r");
+    await settle();
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+});

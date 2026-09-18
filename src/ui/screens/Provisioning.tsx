@@ -10,6 +10,8 @@ export type Subscribe = (listen: (event: ProvisionEvent) => void) => () => void;
 export type ProvisioningProps = {
   title: ProgressTitle;
   subscribe: Subscribe;
+  /** True once SIGINT has been seen: the screen owns saying so. */
+  stopping?: boolean;
   now?: () => number;
 };
 
@@ -21,6 +23,7 @@ const TICK_MS = 1_000;
 export const Provisioning = ({
   title,
   subscribe,
+  stopping = false,
   now = Date.now,
 }: ProvisioningProps): React.JSX.Element => {
   const [steps, setSteps] = useState<readonly StepState[]>(() =>
@@ -94,39 +97,67 @@ export const Provisioning = ({
           </Text>
         ) : null}
         {steps.map((step, at) => (
-          <Text key={step.run}>
-            {step.outcome === "ran" ? (
-              <Text color="green">{"  ✓ "}</Text>
-            ) : step.outcome === undefined && at === running ? (
-              <Text color="cyan">{"  ▸ "}</Text>
-            ) : step.outcome === undefined ? (
-              <Text dimColor>{"    "}</Text>
-            ) : (
-              <Text color="yellow">{"  ! "}</Text>
-            )}
-            <Text dimColor={step.outcome === undefined && at !== running}>
-              {step.run}
-            </Text>
-            {at === running && startedAt !== undefined ? (
-              <Text dimColor>{`   ${elapsed(sinceStep)}`}</Text>
-            ) : null}
-          </Text>
+          <Box key={step.run}>
+            <Box flexShrink={0}>
+              {step.outcome === "ran" ? (
+                <Text color="green">{"  ✓ "}</Text>
+              ) : step.outcome === undefined && at === running ? (
+                <Text color="cyan">{"  ▸ "}</Text>
+              ) : step.outcome === undefined ? (
+                <Text dimColor>{"    "}</Text>
+              ) : (
+                <Text color="yellow">{"  ! "}</Text>
+              )}
+            </Box>
+            <Box flexGrow={1} minWidth={0}>
+              <Text
+                wrap="truncate-end"
+                dimColor={step.outcome === undefined && at !== running}
+              >
+                {step.run}
+              </Text>
+            </Box>
+            <Box flexShrink={0}>
+              <Text dimColor>
+                {at === running && startedAt !== undefined
+                  ? `  ${elapsed(sinceStep)}`
+                  : ""}
+              </Text>
+            </Box>
+          </Box>
         ))}
       </Box>
 
       {tail === "" ? null : (
         <Box marginTop={1}>
-          <Text dimColor>{`  › ${tail}`}</Text>
+          <Text dimColor wrap="truncate-end">{`  › ${tail}`}</Text>
         </Box>
       )}
+
+      {stopping ? (
+        <Box marginTop={1}>
+          <Text color="yellow">{"  stopping…"}</Text>
+        </Box>
+      ) : null}
 
       {title.logPath === undefined ? null : (
         <Box marginTop={1}>
-          <Text dimColor>{`  log  ${title.logPath}`}</Text>
+          <Text
+            dimColor
+            wrap="truncate-start"
+          >{`  log  ${title.logPath}`}</Text>
         </Box>
       )}
 
-      <Footer hints={[]} />
+      {/* The one long-lived screen: SIGINT reaches the run, so say so rather
+          than leaving a second Ctrl-C as the only visible effect. */}
+      <Footer
+        hints={
+          stopping
+            ? [{ key: "ctrl-c", label: "again to quit now" }]
+            : [{ key: "ctrl-c", label: "stop" }]
+        }
+      />
     </Box>
   );
 };

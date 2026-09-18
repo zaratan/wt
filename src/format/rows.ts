@@ -31,8 +31,9 @@ const unpublishedNote = (unpublished: Unpublished): string | undefined => {
 };
 
 /**
- * Every condition `wt rm` can refuse for is in here, because the dashboard
- * must not refuse for a reason that was not on the row before the key was hit.
+ * What `WorktreeStatus` alone can tell. `wt rm` also refuses on a live process
+ * in the tree, which no status carries, so a refusal can still surprise a row
+ * that looks clean — the caller must show what `runRm` answered.
  */
 export const rowNotes = (status: WorktreeStatus): readonly string[] => {
   const out: string[] = [];
@@ -77,6 +78,6 @@ export const worktreeRows = (
 
 export const spaceNote = (space: OpenSpace | undefined): string | undefined => {
   if (space === undefined) return undefined;
-  const state = space.focused ? "focused" : "space open";
+  const state = space.focused ? "space focused" : "space open";
   return space.label === undefined ? state : `${state} (${space.label})`;
 };

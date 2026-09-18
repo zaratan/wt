@@ -14,8 +14,8 @@ describe("Confirm", () => {
     expect(frame).toContain("second line");
   });
 
-  it("answers yes on y, in both languages", async () => {
-    for (const key of ["y", "o"]) {
+  it("answers yes only on an explicit y", async () => {
+    for (const key of ["y", "Y"]) {
       const onAnswer = vi.fn();
       const { stdin } = render(
         <Confirm question="go ahead?" onAnswer={onAnswer} />,
@@ -26,14 +26,26 @@ describe("Confirm", () => {
     }
   });
 
-  it("reads a bare enter as no, so nothing agrees by accident", async () => {
+  it("does not bind enter at all: it means yes on every other screen", async () => {
     const onAnswer = vi.fn();
     const { stdin } = render(
       <Confirm question="go ahead?" onAnswer={onAnswer} />,
     );
     stdin.write("\r");
     await settle();
-    expect(onAnswer).toHaveBeenCalledWith(false);
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  it("answers no on n and on q", async () => {
+    for (const key of ["n", "q"]) {
+      const onAnswer = vi.fn();
+      const { stdin } = render(
+        <Confirm question="go ahead?" onAnswer={onAnswer} />,
+      );
+      stdin.write(key);
+      await settle();
+      expect(onAnswer).toHaveBeenCalledWith(false);
+    }
   });
 
   it("reads escape as no", async () => {

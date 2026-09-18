@@ -63,7 +63,7 @@ export const ConfigReviewScreen = ({
       toggle(paths, !paths.every((path) => kept.includes(path)));
       return;
     }
-    if (key.escape || (key.ctrl && input === "c")) {
+    if (key.escape || input === "q") {
       onDecide({ kind: "skip" });
       return;
     }

@@ -33,14 +33,9 @@ export const runProvisioning = async (
     });
   }
 
+  // The trace is NOT forwarded while a screen is up: it writes to stderr, Ink
+  // draws to stdout, and the same terminal gets both. The screen wins.
   return await watch(title, (emit) =>
-    provision(git, {
-      ...input,
-      onEvent: (event) => {
-        emit(event);
-        const line = trace === undefined ? undefined : describeEvent(event);
-        if (line !== undefined) trace?.(line);
-      },
-    }),
+    provision(git, { ...input, onEvent: emit }),
   );
 };

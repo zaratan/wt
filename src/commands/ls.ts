@@ -11,6 +11,8 @@ export type LsInput = {
   repo?: string;
   /** Include worktrees wt does not manage, such as herdr's own. */
   all: boolean;
+  /** Typed here rather than read out of the CLI option bag by its name. */
+  prune?: boolean;
 };
 
 export type OrphanDirectory = { path: string };
@@ -100,7 +102,7 @@ export const runLs = async (
   const repoProbes = createProbes(repoGit);
 
   const pruned =
-    context.dryRun || context.options.prune === false
+    context.dryRun || input.prune === false || context.options.prune === false
       ? false
       : await pruneIfStale(repoGit, topology, repoProbes);
 

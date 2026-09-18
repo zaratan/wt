@@ -61,8 +61,9 @@ switch (result.kind) {
     // Ink owns stdout and Ctrl-C while a screen is up; the process handler
     // would otherwise write "stopping…" straight into the frame.
     const inkHeld = { current: false };
+    const interrupt = { requested: false };
     const resolvers = interactive
-      ? interactiveResolvers(inkHeld)
+      ? interactiveResolvers(inkHeld, interrupt)
       : {
           chooseRepo: undefined,
           reviewConfig: undefined,
@@ -97,7 +98,6 @@ switch (result.kind) {
 
     // First Ctrl-C asks every child to stop and lets the command record what
     // it did; a second one means the user is done waiting.
-    const interrupt = { requested: false };
     const onInterrupt = (): void => {
       if (interrupt.requested) process.exit(EXIT.INTERRUPTED);
       interrupt.requested = true;
@@ -112,9 +112,29 @@ switch (result.kind) {
     // The only invocation the parser chose rather than the user: the dashboard's
     // slot. An explicit `wt ls` stays the text listing it has always been.
     if (result.invocation.defaulted === true && interactive) {
-      const message = await runDashboard(context, inkHeld);
+      const leaving = await runDashboard(context, inkHeld);
+
+      // Ink is down before this runs, so `wt new` is free to mount its own
+      // review and progress screens on a terminal nobody else holds.
+      const asked =
+        leaving.create === undefined
+          ? undefined
+          : parse(["new", leaving.create]);
+      const created =
+        asked?.kind === "run"
+          ? await dispatch(asked.invocation, context)
+          : undefined;
+
       process.off("SIGINT", onInterrupt);
       process.off("SIGTERM", onInterrupt);
+
+      if (created !== undefined) {
+        if (created.stdout !== undefined) process.stdout.write(created.stdout);
+        if (created.stderr !== undefined) process.stderr.write(created.stderr);
+        process.exit(interrupt.requested ? EXIT.INTERRUPTED : created.code);
+      }
+
+      const message = leaving.message;
       if (message !== undefined) process.stderr.write(`${message}\n`);
       process.exit(
         interrupt.requested
