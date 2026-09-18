@@ -229,19 +229,25 @@ export const dispatch = async (
         context,
       );
 
+      // Deregistered but not deleted is a partial success, not a failure: the
+      // caller must clean up, not retry.
+      const rmCode =
+        result.kind === "removed" || result.kind === "planned"
+          ? EXIT.OK
+          : result.kind === "detached"
+            ? EXIT.PARTIAL
+            : EXIT.ERROR;
+
       if (context.json) {
         return {
           stdout: `${JSON.stringify(result, null, 2)}\n`,
-          code:
-            result.kind === "removed" || result.kind === "planned"
-              ? EXIT.OK
-              : EXIT.ERROR,
+          code: rmCode,
         };
       }
       const text = renderRm(result);
-      return result.kind === "removed" || result.kind === "planned"
-        ? { stdout: text, code: EXIT.OK }
-        : { stderr: text, code: EXIT.ERROR };
+      return rmCode === EXIT.OK
+        ? { stdout: text, code: rmCode }
+        : { stderr: text, code: rmCode };
     }
 
     case "status": {

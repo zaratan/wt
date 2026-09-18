@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runNew } from "./new.js";
 import { runRm, findings, type RmResult } from "./rm.js";
+import { renderRm } from "../format/rm.js";
 import type { CommandContext } from "./context.js";
 import { createGit } from "../lib/git/exec.js";
+import { run } from "../lib/exec/run.js";
 import { createProbes } from "../lib/git/probes.js";
 import { hasUnsavedWork, worktreeStatus } from "../lib/git/status.js";
 import {
@@ -368,5 +370,74 @@ describe("remove.delete_branch", () => {
       ),
     );
     expect(result.branch.kind).toBe("kept");
+  });
+});
+
+describe("a removal git could not finish", () => {
+  it("reports the worktree as deregistered with files left, not as a plain failure", async () => {
+    const { repo, worktree } = await makeWorktreeWithoutRemote("unfinished");
+
+    // In the wild this is a dev server recreating files under .next/ while git
+    // walks the tree. A directory git cannot empty reproduces the same state
+    // deterministically: deregistered, then the delete fails.
+    await mkdir(join(worktree, "locked"), { recursive: true });
+    await writeFile(join(worktree, "locked", "f"), "x");
+    await chmod(join(worktree, "locked"), 0o500);
+
+    const result = await runRm(
+      { target: "feat/x", force: true, keepSpace: true },
+      contextAt(repo),
+    );
+    await chmod(join(worktree, "locked"), 0o700);
+
+    expect(result.kind).toBe("detached");
+    if (result.kind !== "detached") throw new Error(result.kind);
+    expect(result.leftover).toBe(worktree);
+    expect(renderRm(result)).toContain(`rm -rf ${worktree}`);
+  });
+
+  it("stops listing the worktree it could not delete, so wt ls does not lie", async () => {
+    const { repo, worktree } = await makeWorktreeWithoutRemote("unlisted");
+    await mkdir(join(worktree, "locked"), { recursive: true });
+    await writeFile(join(worktree, "locked", "f"), "x");
+    await chmod(join(worktree, "locked"), 0o500);
+
+    await runRm(
+      { target: "feat/x", force: true, keepSpace: true },
+      contextAt(repo),
+    );
+    await chmod(join(worktree, "locked"), 0o700);
+
+    const listed = await git(repo, "worktree", "list");
+    expect(listed).not.toContain(worktree);
+  });
+});
+
+describe("the live-process guard", () => {
+  it("refuses while a command runs in the worktree, and says --force will not stop it", async () => {
+    const { repo, worktree } = await makeWorktreeWithoutRemote("busy");
+    const controller = new AbortController();
+    const running = run({
+      argv: ["/bin/sleep", "15"],
+      cwd: worktree,
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
+      signal: controller.signal,
+      timeoutMs: 20_000,
+    });
+
+    try {
+      const result = await runRm(
+        { target: "feat/x", keepSpace: true, force: false },
+        contextAt(repo),
+      );
+      expect(result.kind).toBe("blocked");
+      if (result.kind !== "blocked") throw new Error(result.kind);
+      expect(result.findings.join(" ")).toContain("sleep");
+      expect(renderRm(result)).toContain("is NOT stopped");
+      expect(await stat(worktree)).toBeTruthy();
+    } finally {
+      controller.abort();
+      await running;
+    }
   });
 });

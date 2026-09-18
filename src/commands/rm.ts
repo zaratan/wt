@@ -7,6 +7,7 @@ import { closeSpace, findSpaceFor } from "../lib/herdr/workspace.js";
 import type { Topology } from "../lib/git/topology.js";
 import { gitFor } from "./ls.js";
 
+import { describeProcesses, processesIn } from "../lib/proc/live.js";
 import { configFor } from "./provision.js";
 import type { CommandContext } from "./context.js";
 
@@ -40,6 +41,14 @@ export type RmResult =
     }
   | { kind: "planned"; status: WorktreeStatus; findings: readonly string[] }
   | { kind: "blocked"; status: WorktreeStatus; findings: readonly string[] }
+  /** git dropped the worktree from its registry but could not delete the files. */
+  | {
+      kind: "detached";
+      status: WorktreeStatus;
+      leftover: string;
+      message: string;
+      space: SpaceClosure;
+    }
   | { kind: "choose"; from: string; candidates: readonly RepoCandidate[] }
   | { kind: "error"; message: string; hint?: string };
 
@@ -193,7 +202,11 @@ export const runRm = async (
     exists: probes.fs.exists,
   });
 
-  const found = findings(status);
+  const running = describeProcesses(await processesIn(entry.path, context.env));
+  const found = [
+    ...findings(status),
+    ...(running === undefined ? [] : [running]),
+  ];
   if (context.dryRun) return { kind: "planned", status, findings: found };
   if (found.length > 0 && !input.force) {
     return { kind: "blocked", status, findings: found };
@@ -208,9 +221,30 @@ export const runRm = async (
     { cwd: topology.repoRoot, timeoutMs: 60_000 },
   );
   if (removed.kind !== "ran" || removed.code !== 0) {
+    const message =
+      removed.kind === "ran" ? removed.stderr.trim() : removed.message;
+
+    // `git worktree remove` is not atomic: it can deregister the worktree and
+    // delete part of the tree before failing, typically when a dev server
+    // recreates files under .next/ faster than git removes them. Saying "it
+    // failed" would claim nothing moved.
+    const stillListed = (
+      (await probes.git.worktrees(topology.repoRoot)) ?? []
+    ).some((other) => other.path === entry.path);
+    if (!stillListed) {
+      await prune(repoGit, topology.repoRoot);
+      return {
+        kind: "detached",
+        status,
+        leftover: entry.path,
+        message,
+        space,
+      };
+    }
+
     return {
       kind: "error",
-      message: removed.kind === "ran" ? removed.stderr.trim() : removed.message,
+      message,
       hint: input.force ? undefined : "add --force to remove it anyway",
     };
   }

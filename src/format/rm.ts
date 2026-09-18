@@ -20,11 +20,29 @@ export const renderRm = (result: RmResult): string => {
 
     case "blocked":
       lines.push(
-        `wt rm: ${basename(result.status.path)} holds work that is not saved anywhere:`,
+        `wt rm: ${basename(result.status.path)} is not ready to be removed:`,
         "",
         ...result.findings.map((finding) => `  ${finding}`),
         "",
-        "  use --force to remove it anyway (this discards the above)",
+        "  --force removes it anyway: unsaved work is discarded, and a running",
+        "  process is NOT stopped — it can recreate files while git deletes them",
+        "  and leave the removal half done.",
+      );
+      break;
+
+    case "detached":
+      lines.push(
+        `wt rm: git removed ${basename(result.status.path)} from its worktree list,`,
+        "       but could not delete the directory:",
+        "",
+        `  ${result.message}`,
+        "",
+        "  A dev server writing into the tree is the usual cause: it recreates",
+        "  files faster than git deletes them. Stop it, then:",
+        "",
+        `      rm -rf ${result.leftover}`,
+        "",
+        `  The branch ${result.status.branch ?? "(detached)"} was kept.`,
       );
       break;
 
