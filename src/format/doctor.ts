@@ -57,6 +57,17 @@ export const renderDoctor = (report: DoctorReport): string => {
       : `  ${label("git")}NOT USABLE — ${report.git.message}`,
   );
 
+  lines.push(
+    report.herdr.kind === "ok"
+      ? `  ${label("herdr")}${report.herdr.version ?? "?"} on ${report.herdr.socketPath}`
+      : `  ${label("herdr")}not answering — ${report.herdr.message}`,
+  );
+  if (report.herdr.kind === "down") {
+    for (const path of report.herdr.triedPaths) {
+      lines.push(`  ${label("")}tried ${path}`);
+    }
+  }
+
   if (report.inheritedGitVars.length > 0) {
     lines.push(
       `  ${label("inherited")}${report.inheritedGitVars.join(", ")} — stripped by wt, but other tools in this shell will follow them`,

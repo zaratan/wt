@@ -140,18 +140,31 @@ pnpm build            # binaires darwin-arm64 + linux-x64
 **Jamais de `git commit` / `git tag` / `git push` depuis l'agent.** L'utilisateur
 fait ses commits lui-même. Proposer un message, c'est tout.
 
-## herdr — ce qu'il faut savoir
+## herdr — mesuré sur la version 0.9.1
 
-- Le **cwd d'un space est ce qui lie ce space à un worktree** : herdr calcule
-  `WorkspaceInfo.worktree` à partir de lui. C'est pourquoi `wt` ouvre le space **sur
-  le worktree** et place claude dans le parent via `@parent:` dans le DSL. Un space
-  ouvert sur le parent a `worktree: null`, et il faudrait alors réimplémenter tout
-  un registre d'état.
-- `layout.apply` n'a **pas** de sous-commande CLI : le client socket natif est une
-  nécessité, pas une optimisation. Protocole JSON-lines sur `$HERDR_SOCKET_PATH`,
-  aucun handshake.
-- `pane_id` est **nullable et non requis** dans la réponse de `layout.apply`. Se
-  rabattre sur `pane.list` et les `label`.
+Vérifié contre un serveur réel (`herdr --session <nom> server`, isolé de la session
+de travail), pas déduit du schéma.
+
+- **Le socket est one-shot.** Une requête, une réponse, puis herdr ferme. Une
+  deuxième requête sur la même connexion prend `EPIPE`. Le protocole ressemble à du
+  JSON-lines multiplexé, il ne l'est pas. `lib/herdr/socket.ts` ouvre donc une
+  connexion par appel.
+- **`workspace.create --cwd <worktree>` ne lie rien.** `WorkspaceInfo.worktree`
+  reste `null`. C'est **`worktree.open { cwd: <repo>, path: <worktree> }`** qui le
+  remplit, avec `is_linked_worktree: true`. D'où : `wt` ouvre ses spaces par
+  `worktree.open`, et c'est ce qui permet à herdr d'être le registre — donc pas de
+  store d'état global à maintenir.
+- `worktree.open` **exige `cwd`** (le repo source) en plus de `path`, sinon
+  `invalid_request: workspace_id or cwd is required when no workspace is active`.
+- **`layout.apply` prend `tab_id` OU `workspace_id`, jamais les deux** →
+  `invalid_target`. Avec `tab_id`, il crée un **nouveau** tab (on passe `w3:t1`, il
+  répond `w3:t2`) et de nouveaux panes ; l'ancien pane racine disparaît de
+  `pane.list`, il n'y a pas d'orphelin à nettoyer.
+- `pane_id` **est** peuplé dans la réponse de `layout.apply`, et les `label` font
+  l'aller-retour. Le schéma les donne nullables, donc le repli par `pane.list` reste,
+  mais il ne sert pas en pratique.
+- `layout.apply` n'a **pas** de sous-commande CLI : le client socket est une
+  nécessité, pas une optimisation.
 - Gater sur les **capabilities** du `ping`, jamais sur `protocol === 22` : un numéro
   qui bouge à chaque `brew upgrade` produit un warning ignoré en trois semaines.
 - Les codes d'erreur herdr sont des **chaînes libres**, non énumérées dans le schéma.
