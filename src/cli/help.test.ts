@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { renderHelp, renderCommandHelp, renderIndex } from "./help.js";
 import { COMMANDS, GLOBAL_OPTIONS, findCommand } from "./spec.js";
 
-/** Lookup that fails the test instead of leaning on a non-null assertion. */
 const spec = (name: string) => {
   const found = findCommand(name);
   if (found === undefined) throw new Error(`no such command: ${name}`);
@@ -21,9 +20,6 @@ describe("help", () => {
   });
 
   it("documents every option of every command", () => {
-    // Help is generated from the same table the parser reads, so an option
-    // cannot exist without being documented. This is the assertion that keeps
-    // it that way if the rendering ever changes.
     for (const command of COMMANDS) {
       const text = renderCommandHelp(command);
       for (const option of [...command.options, ...GLOBAL_OPTIONS]) {

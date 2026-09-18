@@ -1,9 +1,3 @@
-/**
- * Help text, rendered from the command table.
- *
- * `wt help`, `wt help new` and `wt new --help` all land here, so there is no
- * second copy of the surface to keep in sync.
- */
 import type { CommandSpec, OptionGroup, OptionSpec } from "./spec.js";
 import {
   COMMANDS,
@@ -18,7 +12,6 @@ const INDENT = "  ";
 const pad = (text: string, width: number): string =>
   text + " ".repeat(Math.max(0, width - text.length));
 
-/** `--as <label>, -a` */
 const optionSignature = (option: OptionSpec): string => {
   const forms = [
     option.short === undefined ? undefined : `-${option.short}`,

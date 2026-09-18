@@ -29,7 +29,6 @@ describe("run", () => {
   });
 
   it("treats a non-zero exit as a verdict, not an error", async () => {
-    // `git check-ignore` returning 1 means "not ignored" — a real answer.
     const result = await run({ argv: sh("exit 3"), cwd: dir, env });
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") throw new Error("expected ok");
@@ -47,7 +46,6 @@ describe("run", () => {
   it("runs in the requested cwd", async () => {
     const result = await run({ argv: sh("pwd -P"), cwd: dir, env });
     if (result.kind !== "ok") throw new Error("expected ok");
-    // macOS resolves /var and /tmp through symlinks; compare the real paths.
     expect(result.outcome.stdout.trim()).toBe(
       await import("node:fs/promises").then((fs) => fs.realpath(dir)),
     );
@@ -69,6 +67,15 @@ describe("run", () => {
       cwd: dir,
       env,
     });
+    expect(result.kind).toBe("error");
+    if (result.kind !== "error") throw new Error("expected error");
+    expect(result.code).toBe("spawn_failed");
+  });
+
+  it("reports a cwd that is a file instead of crashing", async () => {
+    const file = join(dir, "not-a-dir");
+    await writeFile(file, "");
+    const result = await run({ argv: sh("pwd"), cwd: file, env });
     expect(result.kind).toBe("error");
     if (result.kind !== "error") throw new Error("expected error");
     expect(result.code).toBe("spawn_failed");
@@ -147,8 +154,6 @@ describe("run", () => {
   });
 
   it("kills grandchildren too when killProcessGroup is set", async () => {
-    // The real case: `pnpm install` spawns workers. A plain child.kill() leaves
-    // them writing into node_modules while we record the step as failed.
     const marker = join(dir, "grandchild.log");
     await writeFile(marker, "");
     const script = `
@@ -169,7 +174,7 @@ describe("run", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 300));
     const sizeAfterKill = (await stat(marker)).size;
-    expect(sizeAfterKill).toBeGreaterThan(0); // it really was running
+    expect(sizeAfterKill).toBeGreaterThan(0);
 
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect((await stat(marker)).size).toBe(sizeAfterKill);

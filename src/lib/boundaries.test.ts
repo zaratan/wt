@@ -1,10 +1,3 @@
-/**
- * The architecture boundaries in eslint.config.js are only worth having if they
- * actually fire. A `no-restricted-imports` pattern matches the import *string*,
- * not the resolved path, so the qualified ui/ glob alone silently lets `../ui/App.js`
- * through — a guard that reads as armed and is not. chiro-tools shipped that
- * exact regression, so here each boundary is proven against a real file on disk.
- */
 import { describe, it, expect, afterEach } from "vitest";
 import { ESLint } from "eslint";
 import { writeFile, rm, mkdir } from "node:fs/promises";
@@ -18,7 +11,6 @@ afterEach(async () => {
   await Promise.all(probes.splice(0).map((p) => rm(p, { force: true })));
 });
 
-/** Lint `source` as if it lived at `relativePath`, and return the rule ids hit. */
 const rulesFiredAt = async (
   relativePath: string,
   source: string,
@@ -76,8 +68,7 @@ describe("architecture boundaries", () => {
   });
 
   describe("UI-free layers", () => {
-    // The regression that matters: the qualified pattern is not enough.
-    it("bans a RELATIVE ui/ import from lib/", async () => {
+    it("bans a RELATIVE ui/ import, which the qualified glob alone misses", async () => {
       const fired = await rulesFiredAt(
         "src/lib/git/__probe_relative_ui.ts",
         `import { App } from "../../ui/App.js";\nexport const x = App;\n`,

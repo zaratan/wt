@@ -1,17 +1,7 @@
-/**
- * The real probes: git commands and the filesystem, behind the interfaces
- * `topology.ts` reasons over.
- */
 import { readdir, realpath as fsRealpath, stat } from "node:fs/promises";
 import type { Git } from "./exec.js";
 import type { FsProbe, GitProbe, Probes, WorktreeEntry } from "./topology.js";
 
-/**
- * Parses `git worktree list --porcelain`.
- *
- * Records are blank-line separated; the first is always the main worktree.
- * `branch` is a full ref, `detached` and `prunable` are bare markers.
- */
 export const parseWorktreePorcelain = (
   stdout: string,
 ): readonly WorktreeEntry[] => {
@@ -93,8 +83,6 @@ export const createGitProbe = (git: Git): GitProbe => ({
 export const createFsProbe = (): FsProbe => ({
   realpath: async (path) => {
     try {
-      // macOS resolves /tmp through a symlink, so an unnormalised path and a
-      // normalised one silently stop comparing equal.
       return await fsRealpath(path);
     } catch {
       return undefined;
@@ -105,6 +93,14 @@ export const createFsProbe = (): FsProbe => ({
     try {
       await stat(path);
       return true;
+    } catch {
+      return false;
+    }
+  },
+
+  isDirectory: async (path) => {
+    try {
+      return (await stat(path)).isDirectory();
     } catch {
       return false;
     }

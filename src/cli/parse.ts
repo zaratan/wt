@@ -1,10 +1,3 @@
-/**
- * argv → a typed command, or a syntax error.
- *
- * Hand-written on purpose. The POC used `zparseopts`, which leaves unknown
- * options in the positional list: `wt --help` became a branch named `--help`
- * and git happily created it. Here an unrecognised option is a hard exit 2.
- */
 import type { CommandSpec, OptionSpec } from "./spec.js";
 import { COMMANDS, GLOBAL_OPTIONS, findCommand } from "./spec.js";
 
@@ -12,7 +5,6 @@ export type OptionValues = Readonly<Record<string, string | boolean>>;
 
 export type Invocation = {
   spec: CommandSpec;
-  /** Keyed by positional name; absent when not supplied. */
   positionals: Readonly<Record<string, string | undefined>>;
   options: OptionValues;
   /** Everything after `--`. */
@@ -59,11 +51,8 @@ const matchOption = (
 };
 
 /**
- * Where to anchor positional values when some are optional.
- *
- * `new [repo] <branch>` must bind a lone value to `branch`, so it anchors
- * right. `config <action> [repo]` must bind a lone value to `action`, so it
- * anchors left. The leading positional's optionality says which.
+ * `new [repo] <branch>` binds a lone value to `branch`; `config <action> [repo]`
+ * binds it to `action`. The leading slot's optionality decides.
  */
 const anchorsRight = (spec: CommandSpec): boolean =>
   spec.positionals[0]?.required === false;
@@ -97,10 +86,7 @@ const assignPositionals = (
   return { kind: "ok", values: assigned };
 };
 
-/**
- * Runs AFTER `--repo`/`--branch` have been merged in: `wt new --repo r --branch b`
- * supplies no positional at all and must still be accepted.
- */
+/** Runs after `--repo`/`--branch` merge in: those supply no positional at all. */
 const validatePositionals = (
   spec: CommandSpec,
   assigned: Readonly<Record<string, string | undefined>>,
@@ -121,7 +107,6 @@ const validatePositionals = (
   return undefined;
 };
 
-/** The command to run when `wt` is invoked bare. */
 const DEFAULT_COMMAND = "ls";
 
 export const parse = (argv: readonly string[]): ParseResult => {
@@ -129,8 +114,7 @@ export const parse = (argv: readonly string[]): ParseResult => {
   const head = separator === -1 ? argv : argv.slice(0, separator);
   const rest = separator === -1 ? [] : argv.slice(separator + 1);
 
-  // `--help` and `--version` win wherever they appear, so they can never be
-  // mistaken for a value — the exact failure the POC had.
+  // Winning wherever they appear is what stops `--help` becoming a branch name.
   const wantsHelp = head.includes("--help") || head.includes("-h");
   const wantsVersion = head.includes("--version") || head.includes("-V");
 
@@ -196,8 +180,6 @@ export const parse = (argv: readonly string[]): ParseResult => {
 
     const matched = matchOption(flagPart, available);
     if (matched === undefined) {
-      // Only this command's own options: dumping the nine global ones too
-      // produces a wall nobody reads. `wt help <command>` has the full list.
       const own = describeOptions(spec.options);
       return {
         kind: "error",
@@ -246,8 +228,7 @@ export const parse = (argv: readonly string[]): ParseResult => {
   }
   const assigned = assignment.values;
 
-  // `--repo`/`--branch` are the non-positional escape hatch. Supplying both
-  // forms is a contradiction, not a precedence question.
+  // Both forms at once is a contradiction, not a precedence question.
   for (const name of ["repo", "branch"] as const) {
     const flagValue = options[name];
     const positional = assigned[name];
@@ -269,7 +250,6 @@ export const parse = (argv: readonly string[]): ParseResult => {
   };
 };
 
-/** Read a boolean option, falling back when it was not supplied. */
 export const flag = (
   options: OptionValues,
   name: string,
@@ -279,7 +259,6 @@ export const flag = (
   return typeof value === "boolean" ? value : fallback;
 };
 
-/** Read a string option. */
 export const value = (
   options: OptionValues,
   name: string,

@@ -1,6 +1,3 @@
-/**
- * Rendering the doctor report. Pure: strings in, strings out.
- */
 import { relative } from "node:path";
 import type { DoctorReport } from "../commands/doctor.js";
 import type { Topology, UmbrellaReason } from "../lib/git/topology.js";
@@ -61,8 +58,6 @@ export const renderDoctor = (report: DoctorReport): string => {
   );
 
   if (report.inheritedGitVars.length > 0) {
-    // Worth shouting about: with GIT_DIR exported, `git -C elsewhere` silently
-    // operates on the wrong repository. wt strips it; other tools do not.
     lines.push(
       `  ${label("inherited")}${report.inheritedGitVars.join(", ")} — stripped by wt, but other tools in this shell will follow them`,
     );

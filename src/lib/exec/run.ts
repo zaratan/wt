@@ -1,34 +1,22 @@
-/**
- * The single sub-process bottleneck.
- *
- * Every child process in `wt` goes through here — git, the provisioning
- * commands, `$EDITOR`. `node:child_process` is banned everywhere else by
- * eslint, so environment scrubbing, timeouts and abort handling are written
- * once instead of at each call site.
- */
 import { spawn } from "node:child_process";
 import type { EnvMap } from "./env.js";
 
 export type RunOptions = {
-  /** Program plus arguments. Never a shell string: no quoting, no injection. */
+  /** Program plus arguments, never a shell string. */
   argv: readonly [string, ...string[]];
   cwd: string;
-  /** Already scrubbed by the caller (`scrubEnv` / `scrubGitEnv`). */
   env: EnvMap;
   timeoutMs?: number;
   signal?: AbortSignal;
   stdin?: string;
-  /** Keep stdout/stderr in memory. Off when streaming a large output. */
   capture?: boolean;
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
   /**
-   * Run in its own process group so a timeout kills the whole tree.
-   * `pnpm install` spawns grandchildren that outlive a plain `child.kill()`
-   * and keep writing into `node_modules` after we have given up on it.
+   * `child.kill()` leaves grandchildren running: a killed `pnpm install` keeps
+   * writing into node_modules. A process group reaches the whole tree.
    */
   killProcessGroup?: boolean;
-  /** Grace period between SIGTERM and SIGKILL when killing. Default 3000ms. */
   killGraceMs?: number;
 };
 
@@ -51,7 +39,6 @@ export type RunResult =
       durationMs: number;
     };
 
-/** True when the command ran to completion with exit status 0. */
 export const succeeded = (result: RunResult): boolean =>
   result.kind === "ok" && result.outcome.code === 0;
 
@@ -91,12 +78,25 @@ export const run = async (options: RunOptions): Promise<RunResult> => {
   const [command, ...args] = argv;
 
   return new Promise<RunResult>((resolve) => {
-    const child = spawn(command, args, {
-      cwd,
-      env,
-      detached: killProcessGroup,
-      stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-    });
+    // Bun throws ENOTDIR from spawn() synchronously when cwd is not a
+    // directory, where Node would emit an "error" event.
+    let child;
+    try {
+      child = spawn(command, args, {
+        cwd,
+        env,
+        detached: killProcessGroup,
+        stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+      });
+    } catch (error) {
+      resolve({
+        kind: "error",
+        code: "spawn_failed",
+        message: error instanceof Error ? error.message : String(error),
+        durationMs: elapsed(),
+      });
+      return;
+    }
 
     let stdout = "";
     let stderr = "";
@@ -107,8 +107,6 @@ export const run = async (options: RunOptions): Promise<RunResult> => {
     let graceTimer: NodeJS.Timeout | undefined;
 
     const kill = (sig: NodeJS.Signals): void => {
-      // A detached child leads its own group; the negative pid reaches every
-      // descendant. Without a pid the process is already gone.
       try {
         if (killProcessGroup && child.pid !== undefined) {
           process.kill(-child.pid, sig);
@@ -116,7 +114,7 @@ export const run = async (options: RunOptions): Promise<RunResult> => {
           child.kill(sig);
         }
       } catch {
-        // Already dead, or the group vanished between the check and the call.
+        // Already gone.
       }
     };
 

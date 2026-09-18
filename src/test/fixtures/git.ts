@@ -1,21 +1,10 @@
-/**
- * Real git repositories in a temp directory.
- *
- * Injected probes can only confirm the model we already believe. The
- * dispositions that broke the first design — a bare repo, a worktree of a bare
- * repo, a submodule, a single-branch clone — are only visible against real git.
- */
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../../lib/exec/run.js";
 import { scrubGitEnv } from "../../lib/exec/env.js";
 
-/**
- * Isolated from the machine: no user config, no signing, no ambient GIT_DIR,
- * a fixed default branch. Without this, the suite passes or fails depending on
- * whose laptop it runs on.
- */
+/** Isolated from the machine, or the suite passes or fails per laptop. */
 const FIXTURE_ENV = scrubGitEnv(
   { PATH: process.env.PATH, HOME: process.env.HOME },
   {
@@ -59,9 +48,7 @@ export type Sandbox = {
 };
 
 export const makeSandbox = async (): Promise<Sandbox> => {
-  // realpath, always: on macOS mkdtemp hands back /var/... while every path
-  // that comes back out of git is /private/var/..., and the two silently stop
-  // comparing equal.
+  // macOS: mkdtemp gives /var/..., git gives back /private/var/....
   const root = await realpath(await mkdtemp(join(tmpdir(), "wt-fixture-")));
   return {
     root,
@@ -69,7 +56,6 @@ export const makeSandbox = async (): Promise<Sandbox> => {
   };
 };
 
-/** A normal repository with one commit on `main`. */
 export const makeRepo = async (
   parent: string,
   name: string,
@@ -83,7 +69,6 @@ export const makeRepo = async (
   return path;
 };
 
-/** A bare repository, the shape half the worktree tutorials recommend. */
 export const makeBareRepo = async (
   parent: string,
   name: string,
@@ -94,7 +79,6 @@ export const makeBareRepo = async (
   return path;
 };
 
-/** Adds a linked worktree on a new branch, and returns its path. */
 export const addWorktree = async (
   repoRoot: string,
   at: string,
@@ -104,7 +88,7 @@ export const addWorktree = async (
   return at;
 };
 
-/** A repo whose remote only fetches one branch — where a plain fetch lies. */
+/** A remote with a restricted refspec: where a plain `git fetch` lies. */
 export const makeSingleBranchClone = async (
   parent: string,
   name: string,
@@ -125,7 +109,6 @@ export const makeSingleBranchClone = async (
   return { clone, origin };
 };
 
-/** A superproject with one submodule, both with a commit. */
 export const makeSuperproject = async (
   parent: string,
   name: string,
@@ -146,7 +129,6 @@ export const makeSuperproject = async (
   return { superproject, submodule: join(superproject, "sub") };
 };
 
-/** A repository with no commit at all: HEAD is unborn. */
 export const makeUnbornRepo = async (
   parent: string,
   name: string,

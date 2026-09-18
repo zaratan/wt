@@ -1,22 +1,14 @@
-/**
- * The command surface, declared once.
- *
- * Parsing and `wt help` both read this table, so an option cannot exist without
- * being documented, and help cannot drift from what the parser accepts.
- */
-
+/** Read by both the parser and `wt help`, so the two cannot drift. */
 export type OptionArity = "none" | "required";
 
-/** Where an option shows up in `wt help <command>`. */
 export type OptionGroup = "selection" | "behaviour" | "output";
 
 export type OptionSpec = {
   long: string;
   short?: string;
   arity: OptionArity;
-  /** Also accept `--no-<long>`, which sets the value to false. */
+  /** Also accepts `--no-<long>`. */
   negatable?: boolean;
-  /** Placeholder shown in help, e.g. `<ref>`. */
   placeholder?: string;
   group: OptionGroup;
   help: string;
@@ -25,7 +17,6 @@ export type OptionSpec = {
 export type PositionalSpec = {
   name: string;
   required: boolean;
-  /** When set, the value must be one of these. */
   choices?: readonly string[];
   help: string;
 };
@@ -34,16 +25,10 @@ export type CommandSpec = {
   name: string;
   aliases?: readonly string[];
   summary: string;
-  /** Two sentences at most; shown by `wt help <command>`. */
   description: string;
-  /**
-   * Leading optional positionals are matched from the RIGHT: the last one is
-   * always the branch/target, anything before it is the repo. See `parse.ts`.
-   */
   positionals: readonly PositionalSpec[];
   options: readonly OptionSpec[];
   examples: readonly string[];
-  /** Grouping in the `wt help` index. */
   section: "create" | "navigate" | "clean" | "configure";
 };
 

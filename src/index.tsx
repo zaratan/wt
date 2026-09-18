@@ -7,9 +7,8 @@ import { EXIT } from "./cli/exit.js";
 import type { CommandContext } from "./commands/context.js";
 import { APP_VERSION } from "./version.js";
 
-// The only place that reads ambient process state. Everything downstream takes
-// it as a parameter — that is what makes `--cwd` honest and the layers testable
-// (enforced by no-restricted-properties in eslint.config.js).
+// The only place that reads ambient process state; everything below takes it
+// as a parameter. Enforced by no-restricted-properties in eslint.config.js.
 const argv = process.argv.slice(2);
 const env = process.env;
 const processCwd = process.cwd();
@@ -30,7 +29,6 @@ switch (result.kind) {
   }
 
   case "error": {
-    // Usage errors go to stderr so `--json` consumers keep a clean stdout.
     process.stderr.write(`${result.message}\n`);
     if (result.hint !== undefined) {
       process.stderr.write(`  ${result.hint}\n`);
@@ -59,7 +57,6 @@ switch (result.kind) {
       env,
       options,
       json,
-      // --json implies --yes: a machine reader cannot answer a prompt.
       yes: json || flag(options, "yes", false),
       verbose,
       dryRun: flag(options, "dry-run", false),

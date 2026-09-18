@@ -1,11 +1,3 @@
-/**
- * Where am I, which repository is this, and where do its worktrees go.
- *
- * Pure over injected probes, so every disposition (bare repo, linked worktree,
- * submodule, umbrella, flat repo) is testable without a filesystem — and then
- * re-tested against real git fixtures, which is what catches the cases a
- * hand-written probe would encode wrongly.
- */
 import { basename, dirname, join, sep } from "node:path";
 
 export type WorktreeEntry = {
@@ -17,11 +9,11 @@ export type WorktreeEntry = {
 };
 
 export type GitProbe = {
-  /** undefined when the directory is not inside a git repository. */
+  /** undefined outside a git repository. */
   isBare: (cwd: string) => Promise<boolean | undefined>;
-  /** Parsed `git worktree list --porcelain`; the FIRST entry is the main worktree. */
+  /** Parsed `git worktree list --porcelain`; the first entry is the main worktree. */
   worktrees: (cwd: string) => Promise<readonly WorktreeEntry[] | undefined>;
-  /** `git rev-parse --show-toplevel`: the working tree of the CURRENT checkout. */
+  /** `git rev-parse --show-toplevel`: the CURRENT checkout, not the main one. */
   showToplevel: (cwd: string) => Promise<string | undefined>;
   checkIgnore: (
     cwd: string,
@@ -32,18 +24,12 @@ export type GitProbe = {
 export type FsProbe = {
   realpath: (path: string) => Promise<string | undefined>;
   exists: (path: string) => Promise<boolean>;
-  /** Names of the first-level entries, or undefined when unreadable. */
+  isDirectory: (path: string) => Promise<boolean>;
   listEntries: (path: string) => Promise<readonly string[] | undefined>;
 };
 
 export type Probes = { git: GitProbe; fs: FsProbe };
 
-/**
- * `umbrella` — the parent holds sibling repos and shared notes, so that is where
- * `@parent:` points and where `.wt/` lives.
- * `plain` — the parent is just a projects folder; `@parent:` is the main checkout.
- * `ask` — no confident verdict; the caller asks once and writes the answer down.
- */
 export type UmbrellaVerdict = "umbrella" | "plain" | "ask";
 
 export type UmbrellaReason =
@@ -62,16 +48,15 @@ export type GuardId =
 export type Guard = { id: GuardId; violated: boolean; message: string };
 
 export type Topology = {
-  /** The MAIN worktree, never a linked one. */
+  /** The main worktree, never a linked one. */
   repoRoot: string;
   repoName: string;
-  /** True when the starting directory was a linked worktree of this repo. */
   startedInLinkedWorktree: boolean;
   parent: string;
   parentIsRepo: boolean;
   umbrella: UmbrellaVerdict;
   umbrellaReason: UmbrellaReason;
-  /** Where `@parent:` opens, once the verdict is settled. */
+  /** Where `@parent:` opens. */
   contextRoot: string;
   /** Where `.wt/` lives. */
   configRoot: string;
@@ -91,20 +76,14 @@ export type TopologyResult =
 
 export type TopologyInput = {
   startDir: string;
-  /** From `--umbrella` / `--no-umbrella`; skips the heuristics entirely. */
   forceUmbrella?: boolean;
-  /** Overrides `<parent>/.worktrees`. */
   worktreesDir?: string;
 };
 
-/** Directory name for worktrees. Dotted so it never shows up in a repo listing. */
 export const WORKTREES_DIR = ".worktrees";
 export const CONFIG_DIR = ".wt";
 
-/**
- * Above this many first-level entries, a directory is a projects folder, not an
- * umbrella. ~/Projects has 61; tercio has 11.
- */
+/** Above this, a directory is a projects folder, not an umbrella. */
 export const MAX_UMBRELLA_SIBLINGS = 25;
 
 const isInsideGitDir = (path: string): boolean =>
@@ -121,8 +100,7 @@ const decideUmbrella = async (
     return { verdict: forced ? "umbrella" : "plain", reason: "forced" };
   }
 
-  // An explicit .wt/ is wt's own answer from last time. It beats every
-  // heuristic, including the veto: the user may have said yes deliberately.
+  // wt's own answer from last time, so it beats every heuristic including the veto.
   if (await probes.fs.exists(join(parent, CONFIG_DIR))) {
     return { verdict: "umbrella", reason: "declared-parent" };
   }
@@ -135,9 +113,8 @@ const decideUmbrella = async (
     return { verdict: "plain", reason: "too-many-siblings" };
   }
 
-  // The FEPEM shape: a shared repo that names its child repos in .gitignore so
-  // their .git never becomes an accidental submodule. That is a deliberate
-  // umbrella, stated in the only place git lets you state it.
+  // Naming a child repo in .gitignore is the only way git lets you declare it,
+  // so a parent that does it is deliberately an umbrella.
   if (parentIsRepo) {
     const ignored = await probes.git.checkIgnore(parent, repoRoot);
     if (ignored === "ignored") {
@@ -168,8 +145,7 @@ const buildGuards = async (
     message: `${worktreesRoot} is itself a git repository; worktrees cannot live inside it`,
   });
 
-  // Being inside SOME repo is fine when that repo is the parent (the FEPEM
-  // shape, handled by .gitignore). Being inside a different one is not.
+  // Inside the parent repo is fine: .gitignore covers it. A different one is not.
   const foreign =
     rootWorktrees !== undefined &&
     !rootIsRepoItself &&
@@ -222,10 +198,8 @@ export const detectTopology = async (
     };
   }
 
-  // The main worktree comes from git itself, never from dirname(--git-common-dir):
-  // that derivation returns the parent of the bare repo for a worktree of a bare
-  // repo, and `<super>/.git/modules` for a worktree of a submodule — which would
-  // put worktreesRoot inside .git.
+  // Never dirname(--git-common-dir): it gives the bare repo's parent for a
+  // worktree of a bare repo, and `<super>/.git/modules` for a submodule.
   const worktrees = (await probes.git.worktrees(startDir)) ?? [];
   const mainEntry = worktrees[0];
   if (mainEntry === undefined) {
@@ -238,10 +212,7 @@ export const detectTopology = async (
 
   const listed = (await probes.fs.realpath(mainEntry.path)) ?? mainEntry.path;
 
-  // Measured, and not documented anywhere obvious: inside a SUBMODULE,
-  // `git worktree list --porcelain` reports the GITDIR
-  // (`<super>/.git/modules/sub`) as the worktree path, not the working tree.
-  // Trusting it verbatim would put worktreesRoot inside .git.
+  // Inside a submodule this porcelain reports the GITDIR, not the working tree.
   let repoRoot = listed;
   if (isInsideGitDir(listed)) {
     const toplevel = await probes.git.showToplevel(startDir);
@@ -256,9 +227,8 @@ export const detectTopology = async (
       };
     }
 
-    // `--show-toplevel` answers for the CURRENT checkout. If that is one of the
-    // linked entries, we are in a worktree of a submodule and cannot name the
-    // submodule's own main checkout — a clear refusal beats a wrong path.
+    // --show-toplevel answers for the current checkout, so matching a linked
+    // entry means we cannot name the submodule's own main checkout.
     const others = await Promise.all(
       worktrees.slice(1).map((entry) => probes.fs.realpath(entry.path)),
     );
@@ -293,8 +263,6 @@ export const detectTopology = async (
     input.forceUmbrella,
   );
 
-  // `plain` means @parent: opens the main checkout, not ~/Projects: a pane in a
-  // folder of 61 projects is useless.
   const contextRoot = verdict === "umbrella" ? parent : repoRoot;
   const worktreesRoot = input.worktreesDir ?? join(parent, WORKTREES_DIR);
 

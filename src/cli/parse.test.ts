@@ -14,9 +14,7 @@ const asRun = (result: ParseResult) => {
 
 describe("parse", () => {
   describe("help and version win wherever they appear", () => {
-    // The POC's actual bug: zparseopts left unknown options in the positional
-    // list, so `wt --help` created a branch called "--help".
-    it("treats --help as help, not as a branch name", () => {
+    it("treats --help as help rather than as a branch name to create", () => {
       expect(run("--help").kind).toBe("help");
       expect(run("-h").kind).toBe("help");
     });
@@ -100,9 +98,7 @@ describe("parse", () => {
       expect(result.message).toContain("<branch>");
     });
 
-    // `config <action> [repo]` has its REQUIRED slot first, so it must anchor
-    // left where `new [repo] <branch>` anchors right.
-    it("binds a lone value to the leading required slot", () => {
+    it("binds a lone value to the leading required slot, anchoring left", () => {
       const invocation = asRun(run("config show"));
       expect(invocation.positionals.action).toBe("show");
       expect(invocation.positionals.repo).toBeUndefined();

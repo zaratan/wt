@@ -18,11 +18,6 @@ import {
 
 let sandbox: Sandbox;
 
-/**
- * A polluted environment, on purpose. GIT_DIR exported by a hook makes
- * `git -C <elsewhere>` operate on the wrong repository, exit 0, and say
- * nothing — so every case below runs under one.
- */
 const pollutedEnv = (): NodeJS.ProcessEnv => ({
   PATH: process.env.PATH,
   HOME: process.env.HOME,
@@ -68,7 +63,6 @@ describe("detectTopology", () => {
     });
 
     it("resolves a LINKED worktree to the main checkout, not to itself", async () => {
-      // The POC took dirname() of the worktree and produced wt/wt/<name>.
       const parent = join(sandbox.root, "linked");
       await mkdir(parent, { recursive: true });
       const repo = await makeRepo(parent, "app");
@@ -113,7 +107,6 @@ describe("detectTopology", () => {
 
       const topology = expectOk(await detectAt(submodule));
       expect(topology.repoName).toBe("sub");
-      // The dangerous outcome would be <super>/.git/modules.
       expect(topology.repoRoot).not.toContain("/.git/");
     });
 
@@ -139,7 +132,6 @@ describe("detectTopology", () => {
       const topology = expectOk(await detectAt(repo));
       expect(topology.umbrella).toBe("plain");
       expect(topology.umbrellaReason).toBe("too-many-siblings");
-      // @parent: opens the checkout, not a folder of 26 projects.
       expect(topology.contextRoot).toBe(topology.repoRoot);
     });
 
@@ -166,9 +158,7 @@ describe("detectTopology", () => {
       expect(topology.umbrellaReason).toBe("declared-repo");
     });
 
-    it("says umbrella when a git parent ignores the child repo", async () => {
-      // The FEPEM shape: /platform/ is named in the parent's .gitignore so its
-      // .git never becomes an accidental submodule.
+    it("says umbrella when a git parent gitignores the child repo", async () => {
       const parent = await makeRepo(sandbox.root, "fepem-like");
       await writeFile(join(parent, ".gitignore"), "/platform/\n");
       await git(parent, "add", ".gitignore");
@@ -216,8 +206,6 @@ describe("detectTopology", () => {
     });
 
     it("refuses a worktrees root that is itself a repository", async () => {
-      // Exactly the live collision: ~/Projects/wt is this tool's own repo, and
-      // a flat repo next to it would have written its worktrees inside.
       const parent = join(sandbox.root, "guards-repo");
       await mkdir(parent, { recursive: true });
       const repo = await makeRepo(parent, "app");

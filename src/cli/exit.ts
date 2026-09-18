@@ -1,13 +1,9 @@
-/**
- * Exit codes, aligned with herdr's own (2 = CLI syntax).
- *
- * `PARTIAL` exists for agents: it says "the worktree is there but it is not
- * ready", which is a different decision from "nothing happened".
- */
 export const EXIT = {
   OK: 0,
   ERROR: 1,
+  /** 2 is what herdr uses for CLI syntax errors. */
   USAGE: 2,
+  /** The worktree exists but is not ready: an agent branches on this. */
   PARTIAL: 3,
 } as const;
 

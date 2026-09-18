@@ -1,14 +1,11 @@
-/**
- * Invocation → command → output.
- *
- * Commands return data; this layer turns it into bytes and an exit code, so a
- * command never formats and `--json` stays a rendering decision.
- */
 import { doctor } from "../commands/doctor.js";
+import { runNew } from "../commands/new.js";
 import type { CommandContext } from "../commands/context.js";
 import { renderDoctor } from "../format/doctor.js";
+import { renderNew } from "../format/new.js";
 import { EXIT } from "./exit.js";
 import type { ExitCode } from "./exit.js";
+import { flag, value } from "./parse.js";
 import type { Invocation } from "./parse.js";
 
 export type Output = {
@@ -22,6 +19,41 @@ export const dispatch = async (
   context: CommandContext,
 ): Promise<Output> => {
   switch (invocation.spec.name) {
+    case "new": {
+      const branch = invocation.positionals.branch;
+      if (branch === undefined) {
+        return { stderr: "wt new: missing <branch>\n", code: EXIT.USAGE };
+      }
+      const result = await runNew(
+        {
+          repo: invocation.positionals.repo,
+          branch,
+          as: value(invocation.options, "as"),
+          from: value(invocation.options, "from"),
+          fetch: flag(invocation.options, "fetch", true),
+          gitignore: flag(invocation.options, "gitignore", true),
+          forceUmbrella: invocation.options.umbrella as boolean | undefined,
+        },
+        context,
+      );
+
+      if (context.json) {
+        return {
+          stdout: `${JSON.stringify(result, null, 2)}\n`,
+          code:
+            result.kind === "error" || result.kind === "choose"
+              ? EXIT.ERROR
+              : EXIT.OK,
+        };
+      }
+
+      const text = renderNew(result, context.cwd);
+      if (result.kind === "error" || result.kind === "choose") {
+        return { stderr: text, code: EXIT.ERROR };
+      }
+      return { stdout: text, code: EXIT.OK };
+    }
+
     case "doctor": {
       const report = await doctor(context);
       if (context.json) {

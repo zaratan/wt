@@ -1,10 +1,3 @@
-/**
- * `wt doctor` — what wt sees from here.
- *
- * This is the first thing to run when something behaves oddly, so it reports
- * the two inputs that make the rest lie when they are wrong: an inherited
- * GIT_DIR, and whatever git resolved the main checkout to.
- */
 import { createGit, okStdout } from "../lib/git/exec.js";
 import { createProbes } from "../lib/git/probes.js";
 import { detectTopology } from "../lib/git/topology.js";
@@ -18,7 +11,6 @@ export type GitCheck =
 export type DoctorReport = {
   cwd: string;
   git: GitCheck;
-  /** Git variables found in the ambient environment, which wt strips. */
   inheritedGitVars: readonly string[];
   topology?: TopologyResult;
 };
