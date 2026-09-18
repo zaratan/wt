@@ -176,7 +176,7 @@ export const runNew = async (
   const existingWorktrees =
     (await probes.git.worktrees(topology.repoRoot)) ?? [];
 
-  let dirName = worktreeDirName(topology.repoName, slug.slug);
+  let dirName = worktreeDirName(slug.slug);
   const taken = existingWorktrees.find(
     (entry) =>
       sameDirName(basename(entry.path), dirName) &&

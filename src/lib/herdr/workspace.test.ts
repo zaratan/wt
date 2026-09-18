@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { agentNameFrom } from "./workspace.js";
+import { agentNameFrom, whyNot } from "./workspace.js";
 import { collectPaneIds } from "./types.js";
 
 describe("agentNameFrom", () => {
@@ -53,5 +53,26 @@ describe("collectPaneIds", () => {
       second: { type: "pane", label: "wt:1", pane_id: "w1:p3" },
     });
     expect([...ids]).toEqual([["wt:1", "w1:p3"]]);
+  });
+});
+
+describe("whyNot", () => {
+  it("carries the code and the message of a refusal", () => {
+    expect(
+      whyNot({
+        kind: "error",
+        error: { code: "pane_busy", message: "a command is already running" },
+      }),
+    ).toBe("pane_busy: a command is already running");
+  });
+
+  it("carries the reason herdr could not be reached", () => {
+    expect(whyNot({ kind: "unreachable", message: "timed out" })).toBe(
+      "timed out",
+    );
+  });
+
+  it("says nothing about a success, which has no reason to give", () => {
+    expect(whyNot({ kind: "ok", result: {} })).toBeUndefined();
   });
 });

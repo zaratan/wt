@@ -250,7 +250,7 @@ describe("wt rm", () => {
     const { repo, worktree } = await makeWorktree("byname-rm");
 
     expectRemoved(
-      await runRm({ target: "app-feat-x", force: false }, contextAt(repo)),
+      await runRm({ target: "feat-x", force: false }, contextAt(repo)),
     );
     await expect(stat(worktree)).rejects.toThrow();
   });

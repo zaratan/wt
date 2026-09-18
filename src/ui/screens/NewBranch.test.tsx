@@ -12,7 +12,7 @@ describe("NewBranch", () => {
 
     stdin.write("feat/x");
     await settle();
-    expect(lastFrame() ?? "").toContain("wt-feat-x");
+    expect(lastFrame() ?? "").toContain("directory  feat-x");
   });
 
   it("submits the typed branch", async () => {

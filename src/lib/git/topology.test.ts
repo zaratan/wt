@@ -68,7 +68,7 @@ describe("detectTopology", () => {
       const repo = await makeRepo(parent, "app");
       const linked = await addWorktree(
         repo,
-        join(parent, ".worktrees", "app-feat"),
+        join(parent, ".worktrees", "app", "feat-x"),
         "feat/x",
       );
 
@@ -76,7 +76,8 @@ describe("detectTopology", () => {
       expect(topology.repoRoot).toBe(topology.repoRoot);
       expect(topology.repoName).toBe("app");
       expect(topology.startedInLinkedWorktree).toBe(true);
-      expect(topology.worktreesRoot).toBe(join(parent, ".worktrees"));
+      expect(topology.worktreesBase).toBe(join(parent, ".worktrees"));
+      expect(topology.worktreesRoot).toBe(join(parent, ".worktrees", "app"));
     });
 
     it("refuses a bare repository instead of crashing", async () => {
@@ -252,5 +253,32 @@ describe("detectTopology", () => {
       const ids = topology.guards.filter((g) => g.violated).map((g) => g.id);
       expect(ids).toContain("worktrees-root-is-a-repo");
     });
+  });
+});
+
+describe("where worktrees live", () => {
+  it("groups them by repository under a shared base", async () => {
+    const parent = join(sandbox.root, "grouped");
+    await mkdir(parent, { recursive: true });
+    const one = await makeRepo(parent, "one");
+    const two = await makeRepo(parent, "two");
+
+    const first = expectOk(await detectAt(one));
+    const second = expectOk(await detectAt(two));
+
+    expect(first.worktreesBase).toBe(second.worktreesBase);
+    expect(first.worktreesRoot).toBe(join(parent, ".worktrees", "one"));
+    expect(second.worktreesRoot).toBe(join(parent, ".worktrees", "two"));
+  });
+
+  it("keeps the base outside every git tree, so git clean cannot reach it", async () => {
+    const parent = join(sandbox.root, "outside");
+    await mkdir(parent, { recursive: true });
+    const repo = await makeRepo(parent, "app");
+
+    const topology = expectOk(await detectAt(repo));
+    expect(topology.worktreesRoot.startsWith(`${topology.repoRoot}/`)).toBe(
+      false,
+    );
   });
 });

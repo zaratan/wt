@@ -40,7 +40,7 @@ wt completion zsh > "$(brew --prefix)/share/zsh/site-functions/_wt"
 and `wt doctor` always prints the verdict and the reason for it.
 
 **A plain repository.** `~/Projects/konnect`. Worktrees go in
-`~/Projects/.worktrees/konnect-<slug>`, configuration in `konnect/.wt/`.
+`~/Projects/.worktrees/konnect/<slug>`, configuration in `konnect/.wt/`.
 
 **A working folder holding several repositories.** `~/Projects/tercio` — not a git
 repository itself, holding `tercioapp`, `infra`, notes. Worktrees go in
@@ -142,8 +142,6 @@ the step that failed and the command to replay it.
   scope for v1, by decision.
 - herdr creates worktrees of its own (`prefix+shift+g`, under `~/.herdr/worktrees`). `wt`
   never touches them; `wt ls --all` shows them as unmanaged, and `wt prune` leaves them be.
-- Plain repositories under the same parent share `~/Projects/.worktrees/`, separated only
-  by the repository name. Two clones of the same name in different places would collide.
 
 ## Development
 

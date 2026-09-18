@@ -29,8 +29,8 @@ export const slugify = (branch: string): SlugResult => {
 export const disambiguator = (branch: string): string =>
   createHash("sha1").update(branch).digest("hex").slice(0, 6);
 
-export const worktreeDirName = (repoName: string, slug: string): string =>
-  `${repoName}-${slug}`;
+/** The repository is the directory above, so the name carries only the slug. */
+export const worktreeDirName = (slug: string): string => slug;
 
 /** APFS is case-insensitive, so two names differing only in case collide. */
 export const sameDirName = (a: string, b: string): boolean =>

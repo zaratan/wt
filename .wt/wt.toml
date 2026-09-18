@@ -1,0 +1,21 @@
+schema = 1
+
+[repo]
+default_base = "main"
+remote = "origin"
+
+[space]
+label = "{repo} - {as}"
+layout = "(@parent:claude | (@wt))"
+
+[provision]
+copy = []
+commands = [
+  { run = "pnpm install", when = "if-missing:node_modules" },
+]
+
+[remove]
+delete_branch = "ask"
+
+# Ports and databases are NOT isolated: two worktrees of this repo share
+# the dev database and the same ports.

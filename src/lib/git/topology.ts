@@ -67,6 +67,8 @@ export type Topology = {
   /** Where `.wt/` lives. */
   configRoot: string;
   worktreesRoot: string;
+  /** The shared parent of every repository's worktrees, and what gets ignored. */
+  worktreesBase: string;
   guards: readonly Guard[];
 };
 
@@ -148,6 +150,7 @@ const decideUmbrella = async (
 
 const buildGuards = async (
   worktreesRoot: string,
+  worktreesBase: string,
   repoRoot: string,
   parent: string,
   probes: Probes,
@@ -162,18 +165,18 @@ const buildGuards = async (
       ? undefined
       : await probes.fs.realpath(enclosing[0]?.path ?? "");
 
-  const rootExists = await probes.fs.exists(worktreesRoot);
+  const rootExists = await probes.fs.exists(worktreesBase);
   const rootIsRepoItself =
     rootExists &&
     (await probes.fs.realpath(
-      (await probes.git.worktrees(worktreesRoot))?.[0]?.path ?? "",
-    )) === (await probes.fs.realpath(worktreesRoot));
+      (await probes.git.worktrees(worktreesBase))?.[0]?.path ?? "",
+    )) === (await probes.fs.realpath(worktreesBase));
 
   guards.push({
     id: "worktrees-root-is-a-repo",
     violated: rootIsRepoItself,
-    message: `${worktreesRoot} is itself a git repository; worktrees cannot live inside it`,
-    fix: `move or rename ${worktreesRoot}, then run wt again`,
+    message: `${worktreesBase} is itself a git repository; worktrees cannot live inside it`,
+    fix: `move or rename ${worktreesBase}, then run wt again`,
   });
 
   // Being inside a repo is only a problem if that repo will track the
@@ -308,13 +311,17 @@ export const detectTopology = async (
   );
 
   const contextRoot = verdict === "umbrella" ? parent : repoRoot;
-  const worktreesRoot = input.worktreesDir ?? join(parent, WORKTREES_DIR);
+  // Grouped by repository under one base: the base stays outside every git
+  // tree, and two repositories of the same name can no longer collide.
+  const repoName = basename(repoRoot);
+  const worktreesBase = input.worktreesDir ?? join(parent, WORKTREES_DIR);
+  const worktreesRoot = join(worktreesBase, repoName);
 
   return {
     kind: "ok",
     topology: {
       repoRoot,
-      repoName: basename(repoRoot),
+      repoName,
       startedInLinkedWorktree,
       parent,
       parentIsRepo,
@@ -323,7 +330,14 @@ export const detectTopology = async (
       contextRoot,
       configRoot: contextRoot,
       worktreesRoot,
-      guards: await buildGuards(worktreesRoot, repoRoot, parent, probes),
+      worktreesBase,
+      guards: await buildGuards(
+        worktreesRoot,
+        worktreesBase,
+        repoRoot,
+        parent,
+        probes,
+      ),
     },
   };
 };

@@ -1,5 +1,5 @@
 import { canonical } from "../fs/canonical.js";
-import type { HerdrClient } from "./socket.js";
+import type { HerdrClient, HerdrResponse } from "./socket.js";
 import {
   collectPaneIds,
   type LayoutApplyResult,
@@ -128,6 +128,15 @@ const waitForPrompt = async (
   await new Promise((resolve) => setTimeout(resolve, 300));
 };
 
+/** herdr error codes are free-form strings, so carry the message as given. */
+export const whyNot = <T>(answer: HerdrResponse<T>): string | undefined => {
+  if (answer.kind === "error") {
+    return `${answer.error.code}: ${answer.error.message}`;
+  }
+  if (answer.kind === "unreachable") return answer.message;
+  return undefined;
+};
+
 export const openSpace = async (
   client: HerdrClient,
   input: OpenSpaceInput,
@@ -218,12 +227,7 @@ export const openSpace = async (
       steps.push({
         step: "agent.start",
         ok: started.kind === "ok",
-        detail:
-          started.kind === "error"
-            ? started.error.message
-            : started.kind === "unreachable"
-              ? started.message
-              : name,
+        detail: started.kind === "ok" ? name : whyNot(started),
       });
       continue;
     }
@@ -238,10 +242,12 @@ export const openSpace = async (
         pane_id: paneId,
         command: pane.command,
       });
+      // The detail used to be filled only on success, so a failure reported
+      // nothing at all — exactly backwards.
       steps.push({
         step: "pane.run",
         ok: ran.kind === "ok",
-        detail: ran.kind === "ok" ? pane.command : undefined,
+        detail: ran.kind === "ok" ? pane.command : whyNot(ran),
       });
     }
   }

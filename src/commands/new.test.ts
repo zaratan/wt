@@ -54,7 +54,7 @@ afterAll(async () => {
 });
 
 describe("wt new", () => {
-  it("creates the worktree under <parent>/.worktrees/<repo>-<slug>", async () => {
+  it("creates the worktree under <parent>/.worktrees/<repo>/<slug>", async () => {
     const parent = join(sandbox.root, "basic");
     await mkdir(parent, { recursive: true });
     const repo = await makeRepo(parent, "app");
@@ -67,7 +67,7 @@ describe("wt new", () => {
     );
 
     expect(result.plan.worktreePath).toBe(
-      join(parent, ".worktrees", "app-investigations-import-cmdb"),
+      join(parent, ".worktrees", "app", "investigations-import-cmdb"),
     );
     expect((await stat(result.plan.worktreePath)).isDirectory()).toBe(true);
   });

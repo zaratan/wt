@@ -47,7 +47,7 @@ export const NewBranch = ({
           {bad
             ? "  that name has no usable directory form"
             : slug.kind === "ok" && branch !== ""
-              ? `  directory  ${repoName}-${slug.slug}`
+              ? `  directory  ${slug.slug}`
               : "  it is created from the default base unless it exists already"}
         </Text>
       </Box>
