@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runNew, type NewResult } from "./new.js";
+import { readCreation } from "../lib/provision/state.js";
+import { createGit } from "../lib/git/exec.js";
 import type { CommandContext } from "./context.js";
 import {
   git,
@@ -313,5 +315,126 @@ describe("config drives wt new", () => {
       throw new Error(created.plan.branchPlan.kind);
     }
     expect(created.plan.branchPlan.base).toBe("develop");
+  });
+});
+
+describe("the very first worktree of a repository", () => {
+  it("opens the layout it just detected, not the built-in default", async () => {
+    const parent = join(sandbox.root, "first-run");
+    await mkdir(parent, { recursive: true });
+    const repo = await makeRepo(parent, "app");
+    await writeFile(
+      join(repo, "package.json"),
+      JSON.stringify({ name: "app", scripts: { dev: "vite" } }),
+    );
+    await writeFile(join(repo, "pnpm-lock.yaml"), "");
+    await git(repo, "add", "-A");
+    await git(repo, "commit", "-qm", "dev script");
+
+    const created = await runNew(
+      {
+        branch: "feat/first",
+        fetch: false,
+        gitignore: false,
+        open: false,
+        focus: false,
+        provision: false,
+      },
+      contextAt(repo),
+    );
+
+    if (created.kind !== "created") throw new Error(created.kind);
+    expect(created.configWritten).toBeDefined();
+
+    const remembered = await readCreation(
+      createGit({
+        cwd: repo,
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, LC_ALL: "C" },
+      }),
+      created.plan.worktreePath,
+    );
+    expect(remembered.layout).toContain("pnpm dev");
+  });
+});
+
+describe("the config review", () => {
+  const withDevScript = async (name: string): Promise<string> => {
+    const parent = join(sandbox.root, name);
+    await mkdir(parent, { recursive: true });
+    const repo = await makeRepo(parent, "app");
+    await writeFile(join(repo, ".gitignore"), ".env\n");
+    await writeFile(join(repo, ".env"), "SECRET=1\n");
+    await writeFile(
+      join(repo, "package.json"),
+      JSON.stringify({ name: "app", scripts: { dev: "vite" } }),
+    );
+    await writeFile(join(repo, "pnpm-lock.yaml"), "");
+    await git(repo, "add", "-A");
+    await git(repo, "commit", "-qm", "setup");
+    return repo;
+  };
+
+  const create = (repo: string, overrides: Partial<CommandContext>) =>
+    runNew(
+      {
+        branch: "feat/x",
+        fetch: false,
+        gitignore: false,
+        open: false,
+        focus: false,
+        provision: false,
+      },
+      contextAt(repo, overrides),
+    );
+
+  it("is never asked when there is no screen to show it on", async () => {
+    const repo = await withDevScript("no-screen");
+    const created = await create(repo, {});
+    if (created.kind !== "created") throw new Error(created.kind);
+    expect(created.configWritten).toBeDefined();
+  });
+
+  it("writes what the user kept, not what was detected", async () => {
+    const repo = await withDevScript("kept");
+    const created = await create(repo, {
+      reviewConfig: () => Promise.resolve({ kind: "write", copy: [] }),
+    });
+
+    if (created.kind !== "created") throw new Error(created.kind);
+    if (created.configWritten === undefined) throw new Error("nothing written");
+    const written = await readFile(created.configWritten, "utf8");
+    expect(written).toContain("copy = []");
+    expect(written).not.toContain('".env"');
+  });
+
+  it("writes nothing at all when the user continues without a config", async () => {
+    const repo = await withDevScript("skipped");
+    const created = await create(repo, {
+      reviewConfig: () => Promise.resolve({ kind: "skip" }),
+    });
+
+    if (created.kind !== "created") throw new Error(created.kind);
+    expect(created.configWritten).toBeUndefined();
+    await expect(
+      readFile(join(repo, ".wt", "app.toml"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("asks before the worktree exists, so abandoning leaves nothing behind", async () => {
+    const repo = await withDevScript("ordering");
+    let existedWhenAsked = true;
+
+    await create(repo, {
+      reviewConfig: async () => {
+        existedWhenAsked = await stat(
+          join(sandbox.root, "ordering", ".worktrees"),
+        )
+          .then(() => true)
+          .catch(() => false);
+        return { kind: "skip" };
+      },
+    });
+
+    expect(existedWhenAsked).toBe(false);
   });
 });

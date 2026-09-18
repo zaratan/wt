@@ -30,8 +30,25 @@ export const DEFAULT_CONFIG: WtConfig = {
 
 export type ConfigIssue = { path: string; message: string };
 
+/**
+ * One file's contribution. Every field is optional: a key a file does not
+ * mention must stay undefined, or that layer silently overrides the ones below
+ * it for a value it never set.
+ */
+export type ConfigLayer = {
+  schema?: number;
+  repo?: { defaultBase?: string; remote?: string };
+  space?: { label?: string; layout?: string };
+  provision?: {
+    copy?: readonly string[];
+    timeoutMs?: number;
+    commands?: readonly ProvisionCommand[];
+  };
+  remove?: { deleteBranch?: "ask" | "never" | "always" };
+};
+
 export type ParsedConfig = {
-  config: Partial<WtConfig>;
+  config: ConfigLayer;
   /** Unknown keys are kept as warnings, never silently dropped. */
   warnings: readonly ConfigIssue[];
 };
@@ -109,8 +126,17 @@ export const validateConfig = (
   const remove = asRecord(record.remove);
 
   const deleteBranch = asString(remove.delete_branch);
+  if (
+    deleteBranch !== undefined &&
+    !["ask", "never", "always"].includes(deleteBranch)
+  ) {
+    warnings.push({
+      path: source,
+      message: `remove.delete_branch: '${deleteBranch}' is not ask, never or always — ignored`,
+    });
+  }
 
-  const config: Partial<WtConfig> = {
+  const config: ConfigLayer = {
     schema,
     repo: {
       defaultBase: asString(repo.default_base),
@@ -118,18 +144,20 @@ export const validateConfig = (
     },
     space: { label: asString(space.label), layout: asString(space.layout) },
     provision: {
-      copy: asStringArray(provision.copy) ?? [],
+      copy: asStringArray(provision.copy),
       timeoutMs:
         typeof provision.timeout_ms === "number"
           ? provision.timeout_ms
-          : DEFAULT_CONFIG.provision.timeoutMs,
-      commands: asCommands(provision.commands) ?? [],
+          : undefined,
+      commands: asCommands(provision.commands),
     },
     remove: {
       deleteBranch:
         deleteBranch === "never" || deleteBranch === "always"
           ? deleteBranch
-          : "ask",
+          : deleteBranch === "ask"
+            ? "ask"
+            : undefined,
     },
   };
 
@@ -143,12 +171,10 @@ const defined = <T>(...values: (T | undefined)[]): T | undefined =>
  * Later layers win. Arrays REPLACE rather than concatenate: otherwise a project
  * could never drop a step inherited from the defaults.
  */
-export const mergeConfigs = (
-  layers: readonly Partial<WtConfig>[],
-): WtConfig => {
+export const mergeConfigs = (layers: readonly ConfigLayer[]): WtConfig => {
   const reversed = [...layers].reverse();
   const pick = <T>(
-    read: (layer: Partial<WtConfig>) => T | undefined,
+    read: (layer: ConfigLayer) => T | undefined,
   ): T | undefined => defined(...reversed.map(read));
 
   return {
@@ -162,21 +188,11 @@ export const mergeConfigs = (
       layout: pick((layer) => layer.space?.layout),
     },
     provision: {
-      copy:
-        pick((layer) =>
-          layer.provision?.copy.length === 0
-            ? undefined
-            : layer.provision?.copy,
-        ) ?? [],
+      copy: pick((layer) => layer.provision?.copy) ?? [],
       timeoutMs:
         pick((layer) => layer.provision?.timeoutMs) ??
         DEFAULT_CONFIG.provision.timeoutMs,
-      commands:
-        pick((layer) =>
-          layer.provision?.commands.length === 0
-            ? undefined
-            : layer.provision?.commands,
-        ) ?? [],
+      commands: pick((layer) => layer.provision?.commands) ?? [],
     },
     remove: {
       deleteBranch: pick((layer) => layer.remove?.deleteBranch) ?? "ask",

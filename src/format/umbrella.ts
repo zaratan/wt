@@ -9,5 +9,5 @@ export const umbrellaQuestion = (parent: string, repoRoot: string): string =>
     `Answering yes puts .wt/ and the @parent: panes in ${parent};`,
     `answering no keeps everything inside ${repoRoot}.`,
     "",
-    `Treat ${basename(parent)} as a workspace folder? [y/N]`,
+    `Treat ${basename(parent)} as a workspace folder?`,
   ].join("\n");

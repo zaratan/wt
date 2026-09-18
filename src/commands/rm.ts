@@ -151,7 +151,7 @@ const wantsBranchGone = async (
   const confirm = context.confirm;
   return confirm === undefined
     ? false
-    : await confirm(`delete the branch too? [y/N] `);
+    : await confirm("delete the branch too?");
 };
 
 export const runRm = async (

@@ -4,6 +4,7 @@ import { createGit } from "../lib/git/exec.js";
 import { createProbes } from "../lib/git/probes.js";
 import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
 import { spaceLabel } from "../lib/config/label.js";
+import { reviewGenerated } from "./review.js";
 import { umbrellaAsker } from "./umbrella.js";
 import { rememberCreation } from "../lib/provision/state.js";
 import { resolveBranch, type BranchPlan } from "../lib/git/branch.js";
@@ -141,7 +142,16 @@ export const runNew = async (
 
   if (!context.dryRun) await prune(repoGit, topology.repoRoot);
 
-  const loaded = await configFor(topology, context);
+  const detectedConfig = await configFor(topology, context);
+  if (detectedConfig.kind === "error") {
+    return { kind: "error", message: detectedConfig.message };
+  }
+
+  // Before the branch is resolved and before anything is created: a review the
+  // user abandons must not leave a worktree behind with no config.
+  const loaded = context.dryRun
+    ? detectedConfig
+    : await reviewGenerated(detectedConfig, topology, context);
   if (loaded.kind === "error") {
     return { kind: "error", message: loaded.message };
   }

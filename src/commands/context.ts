@@ -1,5 +1,6 @@
 import type { OptionValues } from "../cli/parse.js";
 import type { ChooseRepo } from "../lib/git/resolve.js";
+import type { ReviewConfig } from "../lib/config/review.js";
 
 export type CommandContext = {
   cwd: string;
@@ -16,6 +17,7 @@ export type CommandContext = {
   signal?: AbortSignal;
   /** Present only when a screen can be shown: absent leaves the `choose` result. */
   chooseRepo?: ChooseRepo;
+  reviewConfig?: ReviewConfig;
   /** This process, recorded in the provisioning lock so a dead one is cleared. */
   pid: number;
   trace?: (line: string) => void;

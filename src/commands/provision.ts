@@ -1,8 +1,16 @@
 import { readFile, stat } from "node:fs/promises";
 import { createProbes } from "../lib/git/probes.js";
 import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
-import { loadConfig } from "../lib/config/load.js";
-import { detectRepo, type FileProbe } from "../lib/config/detect.js";
+import {
+  configPaths,
+  loadConfig,
+  withGeneratedLayer,
+} from "../lib/config/load.js";
+import {
+  detectRepo,
+  type Detected,
+  type FileProbe,
+} from "../lib/config/detect.js";
 import { generateConfig } from "../lib/config/generate.js";
 import { provision, type ProvisionReport } from "../lib/provision/run.js";
 import type { WtConfig } from "../lib/config/schema.js";
@@ -64,6 +72,11 @@ export const configFor = async (
       kind: "ok";
       config: WtConfig;
       generated?: string;
+      /** Only when a config was generated: what the review screen needs. */
+      detected?: Detected;
+      /** What the files on disk say, before the generated layer is folded in. */
+      base: WtConfig;
+      configPath: string;
       warnings: readonly string[];
     }
   | { kind: "error"; message: string }
@@ -81,8 +94,20 @@ export const configFor = async (
     (issue) => `${issue.path}: ${issue.message}`,
   );
 
+  const configPath = configPaths(
+    context.env,
+    topology.configRoot,
+    topology.repoName,
+  ).repo;
+
   if (!loaded.loaded.needsInit) {
-    return { kind: "ok", config: loaded.loaded.config, warnings };
+    return {
+      kind: "ok",
+      config: loaded.loaded.config,
+      base: loaded.loaded.config,
+      configPath,
+      warnings,
+    };
   }
 
   const detected = await detectRepo(
@@ -98,11 +123,24 @@ export const configFor = async (
     devCommandInLayout: true,
   });
 
+  const folded = withGeneratedLayer(loaded.loaded, generated, configPath);
+  if (folded.kind === "error") {
+    return { kind: "error", message: `${folded.path}: ${folded.message}` };
+  }
+
   return {
     kind: "ok",
-    config: loaded.loaded.config,
+    config: folded.loaded.config,
+    base: loaded.loaded.config,
+    configPath,
     generated,
-    warnings: [...warnings, ...detected.notes],
+    detected,
+    warnings: [
+      ...folded.loaded.warnings.map(
+        (issue) => `${issue.path}: ${issue.message}`,
+      ),
+      ...detected.notes,
+    ],
   };
 };
 

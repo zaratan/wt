@@ -2,10 +2,12 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import {
+  CURRENT_SCHEMA,
   DEFAULT_CONFIG,
   mergeConfigs,
   validateConfig,
   type ConfigIssue,
+  type ConfigLayer,
   type WtConfig,
 } from "./schema.js";
 
@@ -79,7 +81,7 @@ export const loadConfig = async (
   const paths = configPaths(env, configRoot, repoName);
   const order = [paths.global, paths.defaults, paths.repo];
 
-  const layers: Partial<WtConfig>[] = [];
+  const layers: ConfigLayer[] = [];
   const sources: string[] = [];
   const warnings: ConfigIssue[] = [];
   let repoLayerFound = false;
@@ -113,6 +115,47 @@ export const loadConfig = async (
       sources,
       warnings,
       needsInit: !repoLayerFound,
+    },
+  };
+};
+
+/**
+ * Folds a config that has been generated but not yet written. It is the layer
+ * that will win once it lands, so the run that generates it must already obey
+ * it — otherwise the first `wt new` ignores the default_base, remote and layout
+ * it just detected and wrote down.
+ */
+export const withGeneratedLayer = (
+  loaded: LoadedConfig,
+  generated: string,
+  path: string,
+): LoadResult => {
+  let raw: unknown;
+  try {
+    raw = parseToml(generated);
+  } catch (error) {
+    return {
+      kind: "error",
+      message: error instanceof Error ? error.message : String(error),
+      path,
+    };
+  }
+
+  const validated = validateConfig(raw, path);
+  if (validated.kind === "too-new") {
+    return {
+      kind: "error",
+      message: `generated for schema ${String(validated.found)}, but this wt understands ${String(CURRENT_SCHEMA)}`,
+      path,
+    };
+  }
+
+  return {
+    kind: "ok",
+    loaded: {
+      ...loaded,
+      config: mergeConfigs([loaded.config, validated.parsed.config]),
+      warnings: [...loaded.warnings, ...validated.parsed.warnings],
     },
   };
 };

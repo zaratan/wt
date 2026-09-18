@@ -5,7 +5,6 @@ import { renderHelp } from "./cli/help.js";
 import { dispatch } from "./cli/dispatch.js";
 import { EXIT } from "./cli/exit.js";
 import type { CommandContext } from "./commands/context.js";
-import { askConfirm } from "./lib/tty/confirm.js";
 import { interactiveResolvers } from "./ui/drive.js";
 import { APP_VERSION } from "./version.js";
 
@@ -63,7 +62,11 @@ switch (result.kind) {
     const inkHeld = { current: false };
     const resolvers = interactive
       ? interactiveResolvers(inkHeld)
-      : { chooseRepo: undefined };
+      : {
+          chooseRepo: undefined,
+          reviewConfig: undefined,
+          confirm: undefined,
+        };
 
     const context: CommandContext = {
       cwd:
@@ -77,16 +80,11 @@ switch (result.kind) {
       verbose,
       dryRun: flag(options, "dry-run", false),
       interactive,
-      confirm: interactive
-        ? (question) =>
-            askConfirm(
-              { input: process.stdin, output: process.stderr },
-              question,
-            )
-        : undefined,
+      confirm: resolvers.confirm,
       signal: aborter.signal,
       pid: process.pid,
       chooseRepo: resolvers.chooseRepo,
+      reviewConfig: resolvers.reviewConfig,
       trace: verbose
         ? (line) => {
             process.stderr.write(`${line}\n`);
