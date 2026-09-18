@@ -57,6 +57,19 @@ These boundaries are enforced by `eslint.config.js` **and proven** by
 `src/lib/boundaries.test.ts` — a lint rule that silently stops matching is worse
 than no rule. See [CLAUDE.md](./CLAUDE.md) for the two ways that happens.
 
+## Commands
+
+```bash
+wt new [repo] <branch> --as <label>   # create a worktree (--dry-run to preview)
+wt ls [--all]                         # list worktrees and their state
+wt status [target]                    # detail one worktree, or all
+wt rm <target> [--force]              # remove it, refusing to discard work
+wt prune                              # clean stale entries
+wt doctor                             # what wt resolves from here
+```
+
+A target is whatever `wt ls` prints: the branch, the directory name, or a path.
+
 ## Caveats
 
 - **Ports and databases are not isolated.** Two worktrees of the same project share
