@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Session notes
+tmp/
+
+# Bun
+.bun/
+bun.lockb
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Boundary probe files written by src/lib/boundaries.test.ts. They are removed
+# in afterEach; this only catches a crashed run.
+src/**/__probe_*.ts

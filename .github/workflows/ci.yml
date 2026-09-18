@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: pnpm check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Single source of truth for bun/node/pnpm versions: mise.toml.
+      - uses: jdx/mise-action@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  smoke-build:
+    name: smoke ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: darwin-arm64
+          - os: ubuntu-latest
+            target: linux-x64
+    steps:
+      - uses: actions/checkout@v6
+      # Single source of truth for bun/node/pnpm versions: mise.toml.
+      - uses: jdx/mise-action@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Build binary
+        run: pnpm build:${{ matrix.target }}
+      - name: Smoke test — --version
+        run: |
+          OUTPUT=$(./dist/wt-${{ matrix.target }} --version)
+          echo "Got: $OUTPUT"
+          if [[ "$OUTPUT" != wt* ]]; then
+            echo "::error::Expected output to start with 'wt', got: $OUTPUT"
+            exit 1
+          fi
+      - name: Smoke test — --help
+        run: |
+          OUTPUT=$(./dist/wt-${{ matrix.target }} --help)
+          echo "Got: $OUTPUT"
+          if [[ -z "$OUTPUT" ]]; then
+            echo "::error::--help produced no output"
+            exit 1
+          fi

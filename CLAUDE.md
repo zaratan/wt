@@ -1,0 +1,140 @@
+# wt — guide pour Claude
+
+Gestionnaire de worktrees git intégré à [herdr](https://herdr.dev), le gestionnaire
+de workspaces terminal. `wt` crée le worktree, le provisionne, et ouvre un space
+herdr avec un layout de panes décrit par un DSL.
+
+Il remplace un POC zsh de 110 lignes (`~/dotfiles/config/bin/bin/wt`) dont les bugs
+sont listés dans le plan d'implémentation. Ne pas les réintroduire.
+
+**Cible utilisateur : le développeur lui-même, et des agents.** Pas de public
+non-technique. Tout est en **anglais**, code et UI — c'est la seule divergence
+assumée avec chiro-tools, dont la cible est une naturaliste francophone.
+
+## Stack figée
+
+- **Bun** runtime + `bun --compile` pour les binaires (macOS arm64 + Linux x64)
+- **mise** pour la toolchain (`mise.toml`), y compris en CI via `jdx/mise-action`
+- **pnpm** 12 (lockfile committé), aligné avec `packageManager` dans `package.json`
+- **TypeScript strict** (NodeNext, `noUncheckedIndexedAccess`, `target: ES2022`)
+- **Ink 6** + **React 19**, **vitest 4** + `ink-testing-library`
+- **smol-toml** — seule dépendance hors stack de base. Bun parse le TOML nativement
+  à l'import, mais ça ne couvre ni un chemin résolu à l'exécution dans un binaire
+  compilé, ni l'**écriture**, dont la génération de `.wt/*.toml` a besoin.
+
+Pas de zod, pas de commander, pas de lib de parsing d'arguments. Le parseur CLI est
+maison (~150 lignes pures) : c'est ce qui permet de **rejeter toute option inconnue**
+avec exit 2, là où `zparseopts` laissait le POC créer une branche nommée `--help`.
+
+## Architecture — règles dures
+
+```
+src/
+  index.tsx       le SEUL endroit qui lit process.cwd() / process.env
+  cli/            parse → ADT, help, codes de sortie, dispatch
+  commands/       orchestration : séquence des appels lib/, retourne un Result
+  lib/            métier ; jamais d'ink, jamais de react
+    exec/         le SEUL endroit qui importe node:child_process
+  format/         présentation pure ; node:path autorisé, rien d'autre en node:
+  ui/             le seul endroit avec ink/react
+```
+
+| Couche      | Peut importer        | Ne peut pas                               |
+| ----------- | -------------------- | ----------------------------------------- |
+| `lib/`      | `lib/`, `node:*`     | ink, react, `ui/`, `format/`, `commands/` |
+| `lib/exec/` | `node:child_process` | ink, react, `ui/`                         |
+| `commands/` | `lib/`, `format/`    | ink, react, `ui/`, spawn direct           |
+| `format/`   | `node:path`          | tout autre `node:*`, ink, react           |
+| `ui/`       | tout                 | spawn direct                              |
+
+**Un exec, un socket.** Tout sous-processus passe par `lib/exec/run.ts` :
+`{argv, cwd, env, timeout, signal} → Result`. C'est ce qui fait exister le scrub
+d'environnement, les timeouts et le kill de groupe **une fois**. La formulation
+« deux points de contact avec l'extérieur » est un piège : chiro-tools a sept
+imports `node:child_process` dispersés et aucun exec central.
+
+**`commands/*` ne formate jamais et ne touche jamais ink.** Une commande _rend_ un
+plan plutôt que de l'exécuter, ce qui donne `--dry-run` gratuitement.
+
+### Les frontières sont testées, pas seulement déclarées
+
+`src/lib/boundaries.test.ts` prouve chaque règle contre un vrai fichier sur disque.
+Deux façons dont ces garde-fous deviennent inertes, les deux déjà rencontrées ici :
+
+1. **`no-restricted-imports` matche la chaîne d'import, pas le chemin résolu.**
+   Lister `"**/ui/**"` seul laisse passer `../ui/App.js`. Il faut lister les formes
+   relatives aussi. chiro-tools a livré exactement cette régression.
+2. **En flat config, un bloc qui redéfinit une règle la REMPLACE** pour les fichiers
+   qu'il matche, il ne fusionne pas. Un deuxième bloc posant `no-restricted-imports`
+   sur `src/lib/**` a supprimé en silence le ban de `node:child_process` dans tout
+   `lib/`. Les blocs de `eslint.config.js` sont donc **disjoints** : exactement un
+   bloc pose `no-restricted-imports` pour un fichier donné, et il énonce la totalité
+   de ses restrictions.
+
+Ajouter une frontière ⇒ ajouter sa sonde dans `boundaries.test.ts`, dans les deux
+sens (elle mord là où il faut, elle ne mord pas sur l'exception).
+
+## Conventions
+
+- **Pas de `throw`** sur les chemins normaux : `Result` tagué
+  (`{ kind: "ok", ... } | { kind: "error", code }`). Un exit code non nul n'est pas
+  une erreur — `git check-ignore` qui renvoie 1 est une réponse.
+- `AbortSignal` propagé dans tout I/O async ; `cancelled = false` dans les `useEffect`.
+- Écriture de fichier atomique (`.tmp` + rename), toujours.
+- Imports en `.js` (NodeNext). Pas d'`any`, pas de `!`.
+- **Jamais de message d'erreur classé par sous-chaîne** sans `LC_ALL=C` garanti en
+  amont : git répond en français sur cette machine. Classer par code de sortie et
+  par sortie `--porcelain` quand elle existe.
+- Tout chemin qui entre ou sort passe par `realpath` : sur macOS `/tmp` est
+  `/private/tmp`, et deux clés non normalisées divergent en silence.
+
+## Codes de sortie
+
+|     |                                                                           |
+| --- | ------------------------------------------------------------------------- |
+| `0` | succès                                                                    |
+| `1` | erreur                                                                    |
+| `2` | erreur de syntaxe CLI (aligné sur herdr)                                  |
+| `3` | succès partiel — le worktree existe, le provisioning ou le space a échoué |
+
+Le 3 existe pour les agents : il dit « c'est créé mais pas prêt ».
+
+## Commandes
+
+```bash
+pnpm dev              # lance la CLI
+pnpm check            # lint + typecheck + format:check + test — doit être vert
+pnpm test:watch
+pnpm build            # binaires darwin-arm64 + linux-x64
+```
+
+## Workflow attendu
+
+1. **Toute tâche non triviale** passe par le mode plan. Faire relire le plan par
+   `lead-engineer-reviewer` + `tech-architect` (+ `ui-ux-designer` si UI) **en
+   parallèle** avant `ExitPlanMode`.
+2. **Découpage en sous-phases** (A / B / C…). À la fin de chacune, repasser la main
+   pour test manuel.
+3. **`pnpm check` vert** avant de proposer la fin d'une sous-phase. Pas d'exception.
+4. **Review post-implémentation** : `lead-engineer-reviewer` toujours ; les autres
+   selon ce qui est touché. En parallèle.
+
+**Jamais de `git commit` / `git tag` / `git push` depuis l'agent.** L'utilisateur
+fait ses commits lui-même. Proposer un message, c'est tout.
+
+## herdr — ce qu'il faut savoir
+
+- Le **cwd d'un space est ce qui lie ce space à un worktree** : herdr calcule
+  `WorkspaceInfo.worktree` à partir de lui. C'est pourquoi `wt` ouvre le space **sur
+  le worktree** et place claude dans le parent via `@parent:` dans le DSL. Un space
+  ouvert sur le parent a `worktree: null`, et il faudrait alors réimplémenter tout
+  un registre d'état.
+- `layout.apply` n'a **pas** de sous-commande CLI : le client socket natif est une
+  nécessité, pas une optimisation. Protocole JSON-lines sur `$HERDR_SOCKET_PATH`,
+  aucun handshake.
+- `pane_id` est **nullable et non requis** dans la réponse de `layout.apply`. Se
+  rabattre sur `pane.list` et les `label`.
+- Gater sur les **capabilities** du `ping`, jamais sur `protocol === 22` : un numéro
+  qui bouge à chaque `brew upgrade` produit un warning ignoré en trois semaines.
+- Les codes d'erreur herdr sont des **chaînes libres**, non énumérées dans le schéma.
+  Tout code inconnu passe par le chemin générique « rapporter et laisser trancher ».

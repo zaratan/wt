@@ -1,0 +1,4 @@
+# pnpm blocks dependency build scripts by default. esbuild (pulled in by vitest)
+# needs its postinstall to fetch its native binary; nothing else here does.
+allowBuilds:
+  esbuild: true

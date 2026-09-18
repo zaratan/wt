@@ -1,0 +1,14 @@
+# Toolchain, pinned for both local dev and CI (see .github/workflows/*.yml,
+# which run `jdx/mise-action` so there is exactly one source of truth).
+#
+# bun is pinned exactly on purpose: `bun build --compile` embeds the runtime in
+# the shipped binary, so the bun version is part of the artifact, not just of
+# the build.
+#
+# pnpm must stay in sync with `packageManager` in package.json — corepack reads
+# that field and would otherwise fetch a second pnpm behind mise's back.
+
+[tools]
+bun = "1.4.2"
+node = "24"
+pnpm = "12.4.2"
