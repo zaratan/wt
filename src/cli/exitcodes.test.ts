@@ -5,6 +5,7 @@ import { parse } from "./parse.js";
 import { dispatch } from "./dispatch.js";
 import { runNew } from "../commands/new.js";
 import { runLs } from "../commands/ls.js";
+import { runStatus } from "../commands/status.js";
 import type { CommandContext } from "../commands/context.js";
 import { makeRepo, makeSandbox, type Sandbox } from "../test/fixtures/git.js";
 
@@ -102,8 +103,8 @@ describe("the repo resolver", () => {
     await makeRepo(parent, "other");
     const asked: string[] = [];
 
-    const result = await runLs(
-      { all: false },
+    const result = await runStatus(
+      {},
       contextAt(parent, {
         chooseRepo: (choice) => {
           asked.push(choice.from);
@@ -123,7 +124,7 @@ describe("the repo resolver", () => {
     await makeRepo(parent, "one");
     await makeRepo(parent, "two");
 
-    const result = await runLs({ all: false }, contextAt(parent));
+    const result = await runStatus({}, contextAt(parent));
     expect(result.kind).toBe("choose");
   });
 
@@ -133,10 +134,41 @@ describe("the repo resolver", () => {
     await makeRepo(parent, "one");
     await makeRepo(parent, "two");
 
-    const result = await runLs(
-      { all: false },
+    const result = await runStatus(
+      {},
       contextAt(parent, { chooseRepo: () => Promise.resolve(undefined) }),
     );
     expect(result.kind).toBe("choose");
+  });
+});
+
+describe("listing from a working folder", () => {
+  it("spans every repository instead of asking which one", async () => {
+    const parent = join(sandbox.root, "spanning");
+    await mkdir(parent, { recursive: true });
+    await makeRepo(parent, "one");
+    await makeRepo(parent, "two");
+
+    const result = await runLs({ all: false }, contextAt(parent));
+
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(result.report.repos.map((one) => one.repoName).sort()).toEqual([
+      "one",
+      "two",
+    ]);
+    expect(result.report.worktrees).toHaveLength(2);
+  });
+
+  it("attributes every worktree to the repository it belongs to", async () => {
+    const parent = join(sandbox.root, "attributed");
+    await mkdir(parent, { recursive: true });
+    await makeRepo(parent, "alpha");
+    await makeRepo(parent, "beta");
+
+    const result = await runLs({ all: false }, contextAt(parent));
+    if (result.kind !== "ok") throw new Error(result.kind);
+    expect(
+      result.report.worktrees.map((one) => one.topology.repoName).sort(),
+    ).toEqual(["alpha", "beta"]);
   });
 });

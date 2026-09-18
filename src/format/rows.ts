@@ -6,6 +6,10 @@ export type RowSeverity = "clean" | "notes" | "gone";
 
 export type WorktreeRow = {
   status: WorktreeStatus;
+  /** Which repository it belongs to, shown only when a listing spans several. */
+  repo: string;
+  /** Passed back to every command: the cwd alone cannot say which repo. */
+  repoRoot: string;
   name: string;
   branch: string;
   severity: RowSeverity;
@@ -60,12 +64,17 @@ const inside = (cwd: string, path: string): boolean =>
   cwd === path || cwd.startsWith(`${path}/`);
 
 export const worktreeRows = (
-  statuses: readonly WorktreeStatus[],
+  listed: readonly {
+    topology: { repoName: string; repoRoot: string };
+    status: WorktreeStatus;
+  }[],
   spaces: SpaceIndex,
   cwd: string,
 ): readonly WorktreeRow[] =>
-  statuses.map((status) => ({
+  listed.map(({ topology, status }) => ({
     status,
+    repo: topology.repoName,
+    repoRoot: topology.repoRoot,
     name: status.isMain
       ? `${basename(status.path)} (main)`
       : basename(status.path),
@@ -81,3 +90,15 @@ export const spaceNote = (space: OpenSpace | undefined): string | undefined => {
   const state = space.focused ? "space focused" : "space open";
   return space.label === undefined ? state : `${state} (${space.label})`;
 };
+
+/** The one description of a row's trailing text, shared by every renderer. */
+export const rowDetail = (
+  row: WorktreeRow,
+  withRepo: boolean,
+): readonly string[] => [
+  // Never on a main checkout: its directory name already IS the repository.
+  ...(withRepo && !row.status.isMain ? [row.repo] : []),
+  ...(row.here ? ["here"] : []),
+  ...(spaceNote(row.space) === undefined ? [] : [spaceNote(row.space) ?? ""]),
+  ...row.notes,
+];

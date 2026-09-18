@@ -113,33 +113,15 @@ switch (result.kind) {
     // slot. An explicit `wt ls` stays the text listing it has always been.
     if (result.invocation.defaulted === true && interactive) {
       const leaving = await runDashboard(context, inkHeld);
-
-      // Ink is down before this runs, so `wt new` is free to mount its own
-      // review and progress screens on a terminal nobody else holds.
-      const asked =
-        leaving.create === undefined
-          ? undefined
-          : parse(["new", leaving.create]);
-      const created =
-        asked?.kind === "run"
-          ? await dispatch(asked.invocation, context)
-          : undefined;
-
       process.off("SIGINT", onInterrupt);
       process.off("SIGTERM", onInterrupt);
-
-      if (created !== undefined) {
-        if (created.stdout !== undefined) process.stdout.write(created.stdout);
-        if (created.stderr !== undefined) process.stderr.write(created.stderr);
-        process.exit(interrupt.requested ? EXIT.INTERRUPTED : created.code);
+      if (leaving.message !== undefined) {
+        process.stderr.write(`${leaving.message}\n`);
       }
-
-      const message = leaving.message;
-      if (message !== undefined) process.stderr.write(`${message}\n`);
       process.exit(
         interrupt.requested
           ? EXIT.INTERRUPTED
-          : message === undefined
+          : leaving.message === undefined
             ? EXIT.OK
             : EXIT.ERROR,
       );

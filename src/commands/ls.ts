@@ -17,9 +17,15 @@ export type LsInput = {
 
 export type OrphanDirectory = { path: string };
 
+/** A worktree knows which repository it belongs to: a working folder holds several. */
+export type Listed = { topology: Topology; status: WorktreeStatus };
+
 export type LsReport = {
+  /** The first repository, or the only one. Kept for what needs a single root. */
   topology: Topology;
-  worktrees: readonly WorktreeStatus[];
+  /** More than one when the listing covers a working folder. */
+  repos: readonly Topology[];
+  worktrees: readonly Listed[];
   spaces: SpaceIndex;
   /** Directories under the worktrees root that git does not know about. */
   orphans: readonly OrphanDirectory[];
@@ -80,6 +86,41 @@ const findOrphans = async (
   return found.filter((entry): entry is OrphanDirectory => entry !== undefined);
 };
 
+const listAcross = async (
+  candidates: readonly RepoCandidate[],
+  input: LsInput,
+  context: CommandContext,
+): Promise<LsResult> => {
+  const reports = await Promise.all(
+    candidates.map((candidate) =>
+      runLs({ ...input, repo: candidate.path }, { ...context, json: true }),
+    ),
+  );
+  const ok = reports.filter(
+    (one): one is Extract<LsResult, { kind: "ok" }> => one.kind === "ok",
+  );
+
+  const first = ok[0];
+  if (first === undefined) {
+    return {
+      kind: "error",
+      message: `no repository under ${context.cwd} could be read`,
+    };
+  }
+
+  return {
+    kind: "ok",
+    report: {
+      topology: first.report.topology,
+      repos: ok.map((one) => one.report.topology),
+      worktrees: ok.flatMap((one) => one.report.worktrees),
+      spaces: first.report.spaces,
+      orphans: ok.flatMap((one) => one.report.orphans),
+      pruned: ok.some((one) => one.report.pruned),
+    },
+  };
+};
+
 export const runLs = async (
   input: LsInput,
   context: CommandContext,
@@ -88,13 +129,15 @@ export const runLs = async (
   const probes = createProbes(git);
 
   const resolution = await resolveRepo(
-    {
-      startDir: context.cwd,
-      repoArg: input.repo,
-      chooseRepo: context.chooseRepo,
-    },
+    { startDir: context.cwd, repoArg: input.repo },
     probes,
   );
+
+  // A working folder holds several repositories, and listing is the one thing
+  // that should span them all rather than make you pick one first.
+  if (resolution.kind === "choose") {
+    return await listAcross(resolution.candidates, input, context);
+  }
   if (resolution.kind !== "ok") return resolution;
 
   const { topology } = resolution;
@@ -127,7 +170,8 @@ export const runLs = async (
     kind: "ok",
     report: {
       topology,
-      worktrees: visible,
+      repos: [topology],
+      worktrees: visible.map((status) => ({ topology, status })),
       spaces: context.dryRun ? {} : await indexSpaces(context),
       orphans: await findOrphans(
         topology,

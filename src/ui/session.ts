@@ -29,6 +29,8 @@ export const runAction = async <T>(
   base: CommandContext,
   work: (context: CommandContext) => Promise<T>,
   hold: (abort: () => void) => void,
+  /** Screens the running command may need, rendered by the app that asked. */
+  resolvers: Partial<CommandContext> = {},
 ): Promise<Outcome<T>> => {
   const aborter = new AbortController();
   hold(() => {
@@ -38,6 +40,7 @@ export const runAction = async <T>(
   try {
     const value = await work({
       ...actionContext(base),
+      ...resolvers,
       signal: aborter.signal,
     });
     return { kind: "done", value };

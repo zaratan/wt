@@ -54,10 +54,15 @@ describe("rowSeverity", () => {
   });
 });
 
+const listed = (one: WorktreeStatus) => ({
+  topology: { repoName: "app", repoRoot: "/p/app" },
+  status: one,
+});
+
 describe("worktreeRows", () => {
   it("marks the worktree the command was run from", () => {
     const rows = worktreeRows(
-      [status(), status({ path: "/p/other" })],
+      [listed(status()), listed(status({ path: "/p/other" }))],
       {},
       "/p/.worktrees/app-feat-x/apps/web",
     );
@@ -66,7 +71,11 @@ describe("worktreeRows", () => {
   });
 
   it("does not mistake a sibling whose path merely starts the same", () => {
-    const rows = worktreeRows([status()], {}, "/p/.worktrees/app-feat-x-other");
+    const rows = worktreeRows(
+      [listed(status())],
+      {},
+      "/p/.worktrees/app-feat-x-other",
+    );
     expect(rows[0]?.here).toBe(false);
   });
 });

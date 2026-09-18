@@ -6,6 +6,11 @@ import { worktreeRows } from "../../format/rows.js";
 import { DEFAULT_CONFIG } from "../../lib/config/schema.js";
 import type { WorktreeStatus } from "../../lib/git/status.js";
 
+const listed = (one: WorktreeStatus) => ({
+  topology: { repoName: "app", repoRoot: "/p/app" },
+  status: one,
+});
+
 const status = (overrides: Partial<WorktreeStatus> = {}): WorktreeStatus =>
   ({
     path: "/p/.worktrees/app-feat-x",
@@ -22,7 +27,7 @@ const status = (overrides: Partial<WorktreeStatus> = {}): WorktreeStatus =>
   }) as WorktreeStatus;
 
 const rowOf = (overrides: Partial<WorktreeStatus> = {}) =>
-  worktreeRows([status(overrides)], {}, "/elsewhere")[0];
+  worktreeRows([listed(status(overrides))], {}, "/elsewhere")[0];
 
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 80));
 
@@ -129,7 +134,7 @@ describe("RemovePanel", () => {
 describe("the main checkout", () => {
   it("is refused on the panel, before enter is even offered", () => {
     const row = worktreeRows(
-      [status({ isMain: true, path: "/p/app" })],
+      [listed(status({ isMain: true, path: "/p/app" }))],
       {},
       "/elsewhere",
     )[0];
@@ -146,7 +151,7 @@ describe("the main checkout", () => {
 
   it("does not offer --force, which cannot lift that refusal", () => {
     const row = worktreeRows(
-      [status({ isMain: true, path: "/p/app" })],
+      [listed(status({ isMain: true, path: "/p/app" }))],
       {},
       "/elsewhere",
     )[0];
@@ -163,7 +168,7 @@ describe("the main checkout", () => {
 
   it("does not remove on enter", async () => {
     const row = worktreeRows(
-      [status({ isMain: true, path: "/p/app" })],
+      [listed(status({ isMain: true, path: "/p/app" }))],
       {},
       "/elsewhere",
     )[0];

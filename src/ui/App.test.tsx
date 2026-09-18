@@ -8,6 +8,7 @@ type Call = (input: unknown, context: unknown) => Promise<unknown>;
 const runRm = vi.fn();
 const runLs = vi.fn();
 const runOpen = vi.fn();
+const runStatus = vi.fn();
 
 const forward =
   (spy: typeof runRm): Call =>
@@ -30,6 +31,9 @@ vi.mock("../commands/ls.js", async () => {
 });
 vi.mock("../commands/open.js", () => ({
   runOpen: forward(runOpen),
+}));
+vi.mock("../commands/status.js", () => ({
+  runStatus: forward(runStatus),
 }));
 vi.mock("../commands/provision.js", () => ({
   configFor: () => Promise.resolve({ kind: "error", message: "none" }),
@@ -71,8 +75,12 @@ const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 120));
 const listing = (worktrees: readonly WorktreeStatus[]) => ({
   kind: "ok" as const,
   report: {
-    topology: { repoName: "app" },
-    worktrees,
+    topology: { repoName: "app", repoRoot: "/p/app" },
+    repos: [{ repoName: "app", repoRoot: "/p/app" }],
+    worktrees: worktrees.map((one) => ({
+      topology: { repoName: "app", repoRoot: "/p/app" },
+      status: one,
+    })),
     orphans: [],
     spaces: {},
     pruned: false,
@@ -83,6 +91,7 @@ beforeEach(() => {
   runRm.mockReset();
   runLs.mockReset();
   runOpen.mockReset();
+  runStatus.mockReset();
   runRm.mockResolvedValue({ kind: "removed" });
 });
 
@@ -153,5 +162,105 @@ describe("the dashboard's removal", () => {
 
     expect(runLs).toHaveBeenCalledTimes(2);
     expect(lastFrame() ?? "").not.toContain("/p/two");
+  });
+});
+
+describe("a listing that spans a working folder", () => {
+  const spanning = {
+    kind: "ok" as const,
+    report: {
+      topology: { repoName: "one", repoRoot: "/p/one", parent: "/p" },
+      repos: [
+        { repoName: "one", repoRoot: "/p/one" },
+        { repoName: "two", repoRoot: "/p/two" },
+      ],
+      worktrees: [
+        {
+          topology: { repoName: "two", repoRoot: "/p/two" },
+          status: status({ path: "/p/.worktrees/two/feat-x" }),
+        },
+      ],
+      orphans: [],
+      spaces: {},
+      pruned: false,
+    },
+  };
+
+  it("tells every command which repository the row belongs to", async () => {
+    runLs.mockResolvedValue(spanning);
+    runRm.mockResolvedValue({ kind: "removed" });
+    const { stdin } = render(<App base={base} onLeave={vi.fn()} />);
+    await settle();
+
+    stdin.write("d");
+    await settle();
+    stdin.write("\r");
+    await settle();
+
+    const [input] = runRm.mock.calls[0] as [Record<string, unknown>];
+    expect(input.repo).toBe("/p/two");
+  });
+
+  it("does the same for open, which cannot guess it from the cwd either", async () => {
+    runLs.mockResolvedValue(spanning);
+    runOpen.mockResolvedValue({ kind: "opened" });
+    const { stdin } = render(<App base={base} onLeave={vi.fn()} />);
+    await settle();
+
+    stdin.write("\r");
+    await settle();
+
+    const [input] = runOpen.mock.calls[0] as [Record<string, unknown>];
+    expect(input.repo).toBe("/p/two");
+  });
+});
+
+describe("staying in the TUI", () => {
+  it("shows the status on screen instead of handing the terminal back", async () => {
+    runLs.mockResolvedValue(listing([status()]));
+    runStatus.mockResolvedValue({
+      kind: "ok",
+      report: { topology: { repoName: "app" }, details: [], spaces: {} },
+    });
+    const onLeave = vi.fn();
+    const { stdin, lastFrame } = render(<App base={base} onLeave={onLeave} />);
+    await settle();
+
+    stdin.write("s");
+    await settle();
+
+    expect(onLeave).not.toHaveBeenCalled();
+    expect(lastFrame() ?? "").toContain("esc back");
+  });
+
+  it("comes back to the list on escape", async () => {
+    runLs.mockResolvedValue(listing([status()]));
+    runStatus.mockResolvedValue({
+      kind: "ok",
+      report: { topology: { repoName: "app" }, details: [], spaces: {} },
+    });
+    const { stdin, lastFrame } = render(<App base={base} onLeave={vi.fn()} />);
+    await settle();
+
+    stdin.write("s");
+    await settle();
+    stdin.write("\x1b");
+    await settle();
+
+    expect(lastFrame() ?? "").toContain("d remove");
+  });
+
+  it("stays put after opening a space", async () => {
+    runLs.mockResolvedValue(listing([status()]));
+    runOpen.mockResolvedValue({ kind: "focused" });
+    const onLeave = vi.fn();
+    const { stdin, lastFrame } = render(<App base={base} onLeave={onLeave} />);
+    await settle();
+
+    stdin.write("\r");
+    await settle();
+
+    expect(onLeave).not.toHaveBeenCalled();
+    expect(lastFrame() ?? "").toContain("q quit");
   });
 });

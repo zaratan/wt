@@ -1,16 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "ink";
 import { Dashboard, type DashboardAction } from "./screens/Dashboard.js";
 import { RemovePanel } from "./screens/RemovePanel.js";
 import { NewBranch } from "./screens/NewBranch.js";
+import { StatusView } from "./screens/StatusView.js";
+import { Confirm } from "./screens/Confirm.js";
+import { ConfigReviewScreen } from "./screens/ConfigReview.js";
+import { Provisioning } from "./screens/Provisioning.js";
+import { inAppResolvers, type Pending } from "./pending.js";
 import { runAction } from "./session.js";
 import { runLs } from "../commands/ls.js";
 import { runOpen } from "../commands/open.js";
+import { runNew } from "../commands/new.js";
 import { runStatus } from "../commands/status.js";
 import { runRm, findings } from "../commands/rm.js";
 import { configFor } from "../commands/provision.js";
 import { renderLs } from "../format/ls.js";
 import { renderOpen } from "../format/open.js";
+import { renderNew } from "../format/new.js";
 import { renderRm } from "../format/rm.js";
 import { renderStatus } from "../format/status.js";
 import { worktreeRows, type WorktreeRow } from "../format/rows.js";
@@ -19,7 +26,7 @@ import { DEFAULT_CONFIG } from "../lib/config/schema.js";
 import type { CommandContext } from "../commands/context.js";
 import type { Topology } from "../lib/git/topology.js";
 
-export type Leaving = { message?: string; create?: string };
+export type Leaving = { message?: string };
 
 export type AppProps = {
   base: CommandContext;
@@ -29,6 +36,7 @@ export type AppProps = {
 type View =
   | { kind: "list" }
   | { kind: "creating" }
+  | { kind: "showing"; text: string }
   | { kind: "removing"; intent: RemovalIntent }
   | { kind: "busy"; label: string };
 
@@ -36,11 +44,16 @@ export const App = ({ base, onLeave }: AppProps): React.JSX.Element | null => {
   const { exit } = useApp();
   const [rows, setRows] = useState<readonly WorktreeRow[]>([]);
   const [orphans, setOrphans] = useState<readonly string[]>([]);
+  const [repos, setRepos] = useState(1);
   const [topology, setTopology] = useState<Topology | undefined>(undefined);
   const [unavailable, setUnavailable] = useState<string | undefined>(undefined);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const [focused, setFocused] = useState(0);
   const [view, setView] = useState<View>({ kind: "busy", label: "loading" });
+  // A command running inside the TUI asks through here, so nothing ever mounts
+  // a second Ink instance and nothing drops back to the text path.
+  const [pending, setPending] = useState<Pending | undefined>(undefined);
+  const resolvers = useMemo(() => inAppResolvers(setPending), []);
 
   // Refs, not state: state flips several awaits into an action, so two keys in
   // the same tick both pass a state-based guard and run the action twice.
@@ -87,6 +100,7 @@ export const App = ({ base, onLeave }: AppProps): React.JSX.Element | null => {
       base.cwd,
     );
     setTopology(result.report.topology);
+    setRepos(result.report.repos.length);
     setRows(next);
     setOrphans(result.report.orphans.map((one) => one.path));
     setUnavailable(result.report.spaces.unavailable);
@@ -143,13 +157,15 @@ export const App = ({ base, onLeave }: AppProps): React.JSX.Element | null => {
       start(`reading ${row.name}`);
       void runAction(
         base,
-        (context) => runStatus({ target }, context),
+        (context) => runStatus({ repo: row.repoRoot, target }, context),
         (stop) => (abort.current = stop),
       ).then((outcome) => {
         running.current = false;
         abort.current = undefined;
-        leave({
-          message:
+        if (!alive.current) return;
+        setView({
+          kind: "showing",
+          text:
             outcome.kind === "failed"
               ? outcome.message
               : renderStatus(outcome.value),
@@ -162,17 +178,20 @@ export const App = ({ base, onLeave }: AppProps): React.JSX.Element | null => {
       start(`opening ${row.name}`);
       void runAction(
         base,
-        (context) => runOpen({ target, focus: true }, context),
+        (context) =>
+          runOpen({ repo: row.repoRoot, target, focus: true }, context),
         (stop) => (abort.current = stop),
       ).then((outcome) => {
         running.current = false;
         abort.current = undefined;
-        leave({
-          message:
-            outcome.kind === "failed"
-              ? outcome.message
-              : renderOpen(outcome.value),
-        });
+        finish(
+          outcome.kind === "failed"
+            ? outcome.message
+            : outcome.value.kind === "opened" ||
+                outcome.value.kind === "focused"
+              ? undefined
+              : renderOpen(outcome.value).trimEnd(),
+        );
       });
       return;
     }
@@ -203,6 +222,41 @@ export const App = ({ base, onLeave }: AppProps): React.JSX.Element | null => {
     });
   };
 
+  const create = (branch: string): void => {
+    if (running.current) return;
+    const repo = topology?.repoRoot;
+    start(`creating ${branch}`);
+    void runAction(
+      base,
+      (context) =>
+        runNew(
+          {
+            repo,
+            branch,
+            fetch: true,
+            gitignore: true,
+            open: true,
+            focus: false,
+            provision: true,
+          },
+          context,
+        ),
+      (stop) => (abort.current = stop),
+      resolvers,
+    ).then(async (outcome) => {
+      const message =
+        outcome.kind === "failed"
+          ? outcome.message
+          : outcome.value.kind === "created"
+            ? undefined
+            : renderNew(outcome.value, base.cwd).trimEnd();
+      running.current = false;
+      abort.current = undefined;
+      await load();
+      if (alive.current) setNotice(message);
+    });
+  };
+
   const decide = (remove: boolean): void => {
     if (running.current) return;
     const current = view;
@@ -218,6 +272,7 @@ export const App = ({ base, onLeave }: AppProps): React.JSX.Element | null => {
       (context) =>
         runRm(
           {
+            repo: intent.row.repoRoot,
             target: intent.row.status.branch ?? intent.row.status.path,
             force: false,
             deleteBranch: intent.branchPlan === "deleted",
@@ -241,15 +296,39 @@ export const App = ({ base, onLeave }: AppProps): React.JSX.Element | null => {
     });
   };
 
+  if (pending !== undefined) {
+    if (pending.kind === "confirm") {
+      return <Confirm question={pending.question} onAnswer={pending.answer} />;
+    }
+    if (pending.kind === "review") {
+      return (
+        <ConfigReviewScreen review={pending.review} onDecide={pending.answer} />
+      );
+    }
+    return <Provisioning title={pending.title} subscribe={pending.subscribe} />;
+  }
+
+  if (view.kind === "showing") {
+    return (
+      <StatusView
+        text={view.text}
+        onBack={() => {
+          setView({ kind: "list" });
+        }}
+      />
+    );
+  }
+
   if (view.kind === "creating") {
     return (
       <NewBranch
-        repoName={topology?.repoName ?? ""}
+        repoName={
+          repos > 1
+            ? (topology?.parent.split("/").pop() ?? "")
+            : (topology?.repoName ?? "")
+        }
         onSubmit={(branch) => {
-          // Handed back to index.tsx and run after this screen is gone:
-          // `wt new` mounts its own review and progress screens, and two Ink
-          // instances must never be up at once.
-          leave({ create: branch });
+          create(branch);
         }}
         onCancel={() => {
           setView({ kind: "list" });
@@ -264,9 +343,14 @@ export const App = ({ base, onLeave }: AppProps): React.JSX.Element | null => {
 
   return (
     <Dashboard
-      repoName={topology?.repoName ?? ""}
+      repoName={
+        repos > 1
+          ? (topology?.parent.split("/").pop() ?? "")
+          : (topology?.repoName ?? "")
+      }
       rows={rows}
       orphans={orphans}
+      severalRepos={repos > 1}
       herdrUnavailable={unavailable}
       notice={notice}
       busy={view.kind === "busy" ? view.label : undefined}

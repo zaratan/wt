@@ -1,6 +1,6 @@
-import { basename } from "node:path";
 import type { LsResult } from "../commands/ls.js";
-import { rowNotes, rowSeverity, spaceNote } from "./rows.js";
+import { basename } from "node:path";
+import { rowDetail, rowSeverity, worktreeRows } from "./rows.js";
 import type { WorktreeStatus } from "../lib/git/status.js";
 
 const pad = (text: string, width: number): string =>
@@ -11,7 +11,7 @@ const marker = (status: WorktreeStatus): string => {
   return severity === "gone" ? "✗" : severity === "notes" ? "•" : "·";
 };
 
-export const renderLs = (result: LsResult): string => {
+export const renderLs = (result: LsResult, cwd = ""): string => {
   if (result.kind === "choose") {
     return [
       `Several repositories live under ${result.from}:`,
@@ -32,33 +32,28 @@ export const renderLs = (result: LsResult): string => {
   }
 
   const { report } = result;
-  const lines: string[] = [report.topology.repoName, ""];
+  // A listing that spans a working folder is named after the folder, not after
+  // whichever repository happened to be resolved first.
+  const lines: string[] = [
+    report.repos.length > 1
+      ? basename(report.topology.parent)
+      : report.topology.repoName,
+    "",
+  ];
 
   if (report.worktrees.length === 0) {
     lines.push("  no worktrees");
   } else {
-    const spaces = report.spaces.byCheckout;
-    const rows = report.worktrees.map((status) => ({
-      status,
-      space: spaces?.get(status.path),
-      name: status.isMain
-        ? `${basename(status.path)} (main)`
-        : basename(status.path),
-      branch: status.detached ? "(detached)" : (status.branch ?? "(no branch)"),
-      detail: [
-        ...(spaceNote(spaces?.get(status.path)) === undefined
-          ? []
-          : [spaceNote(spaces?.get(status.path)) ?? ""]),
-        ...rowNotes(status),
-      ],
-    }));
+    const rows = worktreeRows(report.worktrees, report.spaces, cwd);
+    const several = report.repos.length > 1;
 
     const nameWidth = Math.max(...rows.map((row) => row.name.length));
     const branchWidth = Math.max(...rows.map((row) => row.branch.length));
 
     for (const row of rows) {
+      const detail = rowDetail(row, several).join(", ");
       lines.push(
-        `  ${marker(row.status)} ${pad(row.name, nameWidth)}  ${pad(row.branch, branchWidth)}  ${row.detail.join(", ")}`.trimEnd(),
+        `  ${marker(row.status)} ${pad(row.name, nameWidth)}  ${pad(row.branch, branchWidth)}  ${detail}`.trimEnd(),
       );
     }
   }

@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { Footer } from "../Footer.js";
-import { spaceNote, type WorktreeRow } from "../../format/rows.js";
+import { rowDetail, type WorktreeRow } from "../../format/rows.js";
 
 export type DashboardAction =
   | "open"
@@ -14,6 +14,8 @@ export type DashboardProps = {
   repoName: string;
   rows: readonly WorktreeRow[];
   orphans: readonly string[];
+  /** True when the listing spans a working folder's repositories. */
+  severalRepos?: boolean;
   herdrUnavailable?: string;
   busy?: string;
   /** What the last action answered, when it was not simply "done". */
@@ -38,6 +40,7 @@ export const Dashboard = ({
   repoName,
   rows,
   orphans,
+  severalRepos = false,
   herdrUnavailable,
   busy,
   notice,
@@ -99,12 +102,7 @@ export const Dashboard = ({
           const glyph = GLYPH[row.severity];
           // A word in the detail channel, not a glyph in a gap: a lone mark
           // between two padded columns reads as column furniture.
-          const space = spaceNote(row.space);
-          const detail = [
-            ...(row.here ? ["here"] : []),
-            ...(space === undefined ? [] : [space]),
-            ...row.notes,
-          ].join(", ");
+          const detail = rowDetail(row, severalRepos).join(", ");
           return (
             // Truncated, never wrapped: one line per worktree is the whole
             // value of this screen, and it collapses exactly when a row has

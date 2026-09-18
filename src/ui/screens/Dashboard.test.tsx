@@ -4,6 +4,11 @@ import { Dashboard } from "./Dashboard.js";
 import { worktreeRows } from "../../format/rows.js";
 import type { WorktreeStatus } from "../../lib/git/status.js";
 
+const listed = (one: WorktreeStatus) => ({
+  topology: { repoName: "app", repoRoot: "/p/app" },
+  status: one,
+});
+
 const status = (overrides: Partial<WorktreeStatus> = {}): WorktreeStatus =>
   ({
     path: "/p/app",
@@ -21,17 +26,21 @@ const status = (overrides: Partial<WorktreeStatus> = {}): WorktreeStatus =>
 
 const rows = worktreeRows(
   [
-    status({ path: "/p/app", isMain: true }),
-    status({
-      path: "/p/.worktrees/app-cmdb",
-      branch: "feat/cmdb",
-      unpublished: { kind: "count", count: 3, sample: [] },
-    }),
-    status({
-      path: "/p/.worktrees/app-old",
-      branch: "feat/old",
-      missing: true,
-    }),
+    listed(status({ path: "/p/app", isMain: true })),
+    listed(
+      status({
+        path: "/p/.worktrees/app-cmdb",
+        branch: "feat/cmdb",
+        unpublished: { kind: "count", count: 3, sample: [] },
+      }),
+    ),
+    listed(
+      status({
+        path: "/p/.worktrees/app-old",
+        branch: "feat/old",
+        missing: true,
+      }),
+    ),
   ],
   {},
   "/elsewhere",
