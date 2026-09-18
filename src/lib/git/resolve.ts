@@ -4,6 +4,7 @@ import {
   detectTopology,
   type Probes,
   type Topology,
+  type UmbrellaAsk,
 } from "./topology.js";
 
 export type RepoCandidate = { name: string; path: string };
@@ -18,6 +19,7 @@ export type ResolveInput = {
   repoArg?: string;
   forceUmbrella?: boolean;
   worktreesDir?: string;
+  askUmbrella?: UmbrellaAsk;
 };
 
 const isMainCheckout = async (
@@ -71,6 +73,7 @@ export const resolveRepo = async (
         startDir: dir,
         forceUmbrella: input.forceUmbrella,
         worktreesDir: input.worktreesDir,
+        askUmbrella: input.askUmbrella,
       },
       probes,
     );

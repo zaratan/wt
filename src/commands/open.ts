@@ -2,10 +2,13 @@ import { basename } from "node:path";
 import { createProbes } from "../lib/git/probes.js";
 import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
 import { preflight } from "../lib/herdr/preflight.js";
-import { findSpaceFor } from "../lib/herdr/workspace.js";
-import type { Topology, WorktreeEntry } from "../lib/git/topology.js";
+import { findSpaceFor, focusSpace } from "../lib/herdr/workspace.js";
+import { spaceLabel } from "../lib/config/label.js";
+import { readCreation } from "../lib/provision/state.js";
+import { configFor } from "./provision.js";
+import { selectWorktree } from "../lib/git/worktree.js";
 import { gitFor } from "./ls.js";
-import { matchesTarget } from "./status.js";
+
 import { openSpaceFor, type SpaceOutcome } from "./space.js";
 import type { CommandContext } from "./context.js";
 
@@ -24,17 +27,9 @@ export type OpenResult =
       workspaceId: string;
     }
   | { kind: "opened"; label: string; worktreePath: string; space: SpaceOutcome }
+  | { kind: "planned"; label: string; worktreePath: string }
   | { kind: "choose"; from: string; candidates: readonly RepoCandidate[] }
   | { kind: "error"; message: string; hint?: string };
-
-const labelFor = (topology: Topology, entry: WorktreeEntry): string => {
-  const short = entry.branch?.split("/").pop() ?? basename(entry.path);
-  const prefix =
-    topology.umbrella === "umbrella"
-      ? basename(topology.parent)
-      : topology.repoName;
-  return `${prefix} - ${short}`;
-};
 
 export const runOpen = async (
   input: OpenInput,
@@ -52,25 +47,38 @@ export const runOpen = async (
   const probes = createProbes(repoGit);
 
   const entries = (await probes.git.worktrees(topology.repoRoot)) ?? [];
-  const matched = entries.filter((entry) => matchesTarget(entry, input.target));
-
-  const entry = matched[0];
-  if (entry === undefined) {
+  const selected = selectWorktree(entries, input.target);
+  if (selected.kind === "none") {
     return {
       kind: "error",
       message: `no worktree matches '${input.target}'`,
       hint: "run `wt ls` to see what is there",
     };
   }
-  if (matched.length > 1) {
+  if (selected.kind === "many") {
     return {
       kind: "error",
-      message: `'${input.target}' matches ${String(matched.length)} worktrees`,
-      hint: matched.map((candidate) => candidate.path).join(", "),
+      message: `'${input.target}' matches ${String(selected.paths.length)} worktrees`,
+      hint: selected.paths.join(", "),
     };
   }
+  const entry = selected.entry;
 
-  const label = labelFor(topology, entry);
+  const remembered = await readCreation(repoGit, entry.path);
+  const loaded = await configFor(topology, context);
+  const label = spaceLabel(
+    loaded.kind === "ok" ? loaded.config.space.label : undefined,
+    {
+      topology,
+      branch: entry.branch ?? basename(entry.path),
+      slug: basename(entry.path),
+      as: remembered.as,
+    },
+  );
+
+  if (context.dryRun) {
+    return { kind: "planned", label, worktreePath: entry.path };
+  }
 
   // herdr is the registry: if it already has a space bound to this checkout,
   // focusing it is the whole job — even if the user renamed it since.
@@ -82,11 +90,7 @@ export const runOpen = async (
   if (health.kind === "ok") {
     const existing = await findSpaceFor(health.client, entry.path);
     if (existing !== undefined) {
-      if (input.focus) {
-        await health.client.call("workspace.focus", {
-          workspace_id: existing.workspace_id,
-        });
-      }
+      if (input.focus) await focusSpace(health.client, existing.workspace_id);
       return {
         kind: "focused",
         label: existing.label ?? label,
@@ -105,7 +109,10 @@ export const runOpen = async (
         topology,
         worktreePath: entry.path,
         label,
-        layoutSource: input.layout,
+        layoutSource:
+          input.layout ??
+          remembered.layout ??
+          (loaded.kind === "ok" ? loaded.config.space.layout : undefined),
         focus: input.focus,
         runCommands: true,
       },

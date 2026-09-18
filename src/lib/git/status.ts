@@ -1,4 +1,4 @@
-import { sep } from "node:path";
+import { isAbsolute, resolve, sep } from "node:path";
 import { lines, okStdout, type Git } from "./exec.js";
 import type { WorktreeEntry } from "./topology.js";
 
@@ -47,9 +47,9 @@ const OPERATION_MARKERS: readonly (readonly [GitOperation, string])[] = [
 ];
 
 /**
- * These live in the worktree's own git dir, not the common one. Joining them to
- * the common dir passes every test written against the main checkout and sees
- * nothing in a linked worktree — the only place the guard matters.
+ * `--git-path` answers RELATIVE to the cwd it was given from the main checkout
+ * (`.git/MERGE_HEAD`) and absolute from a linked worktree. Taken as absolute it
+ * resolves against wt's own cwd, so the guard reads another repository.
  */
 const operationInProgress = async (
   git: Git,
@@ -57,10 +57,12 @@ const operationInProgress = async (
   exists: (path: string) => Promise<boolean>,
 ): Promise<GitOperation | undefined> => {
   for (const [operation, marker] of OPERATION_MARKERS) {
-    const path = okStdout(
+    const answer = okStdout(
       await git(["rev-parse", "--git-path", marker], { cwd: worktreePath }),
     );
-    if (path !== undefined && (await exists(path))) return operation;
+    if (answer === undefined) continue;
+    const path = isAbsolute(answer) ? answer : resolve(worktreePath, answer);
+    if (await exists(path)) return operation;
   }
   return undefined;
 };

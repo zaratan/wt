@@ -3,6 +3,9 @@ import { basename } from "node:path";
 import { createGit } from "../lib/git/exec.js";
 import { createProbes } from "../lib/git/probes.js";
 import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
+import { spaceLabel } from "../lib/config/label.js";
+import { umbrellaAsker } from "./umbrella.js";
+import { rememberCreation } from "../lib/provision/state.js";
 import { resolveBranch, type BranchPlan } from "../lib/git/branch.js";
 import {
   disambiguator,
@@ -23,9 +26,8 @@ import { WORKTREES_DIR, violatedGuards } from "../lib/git/topology.js";
 import type { Topology } from "../lib/git/topology.js";
 import { openSpaceFor, type SpaceOutcome } from "./space.js";
 import { configFor } from "./provision.js";
+import { writeGenerated } from "./config.js";
 import { provision, type ProvisionReport } from "../lib/provision/run.js";
-import { writeFile, mkdir as makeDir } from "node:fs/promises";
-import { join } from "node:path";
 import type { CommandContext } from "./context.js";
 
 export type NewInput = {
@@ -79,15 +81,6 @@ export type NewResult =
     }
   | { kind: "error"; message: string; hint?: string };
 
-const labelFor = (topology: Topology, branch: string, as?: string): string => {
-  const short = as ?? branch.split("/").pop() ?? branch;
-  const prefix =
-    topology.umbrella === "umbrella"
-      ? basename(topology.parent)
-      : topology.repoName;
-  return `${prefix} - ${short}`;
-};
-
 export const runNew = async (
   input: NewInput,
   context: CommandContext,
@@ -110,6 +103,7 @@ export const runNew = async (
       startDir: context.cwd,
       repoArg: input.repo,
       forceUmbrella: input.forceUmbrella,
+      askUmbrella: umbrellaAsker(context),
     },
     createProbes(git),
   );
@@ -127,7 +121,7 @@ export const runNew = async (
     return {
       kind: "error",
       message: firstBlocker.message,
-      hint: "set another location with worktree.dir, or move this repository",
+      hint: firstBlocker.fix,
     };
   }
 
@@ -144,6 +138,11 @@ export const runNew = async (
 
   if (!context.dryRun) await prune(repoGit, topology.repoRoot);
 
+  const loaded = await configFor(topology, context);
+  if (loaded.kind === "error") {
+    return { kind: "error", message: loaded.message };
+  }
+
   const slug = slugify(input.branch);
   if (slug.kind === "error") {
     return { kind: "error", message: slug.message };
@@ -151,7 +150,8 @@ export const runNew = async (
 
   const branchResolution = await resolveBranch(repoGit, {
     branch: input.branch,
-    base: input.from,
+    base: input.from ?? loaded.config.repo.defaultBase,
+    remote: loaded.config.repo.remote,
     fetch: input.fetch,
     onNotice: (message) => notices.push(message),
   });
@@ -193,13 +193,19 @@ export const runNew = async (
     topology,
     branchPlan: effectivePlan,
     worktreePath,
-    label: labelFor(topology, input.branch, input.as),
+    label: spaceLabel(loaded.config.space.label, {
+      topology,
+      branch: input.branch,
+      slug: slug.slug,
+      as: input.as,
+    }),
     gitArgs: worktreeAddArgs(effectivePlan, worktreePath),
     willIgnore: input.gitignore && topology.parentIsRepo,
     willInitSubmodules: await hasSubmodules(repoGit, topology.repoRoot),
   };
 
   if (holdsOurBranch) {
+    if (context.dryRun) return { kind: "exists", plan, notices };
     return {
       kind: "exists",
       plan,
@@ -248,23 +254,21 @@ export const runNew = async (
     ? await initSubmodules(repoGit, worktreePath)
     : undefined;
 
-  const loaded = await configFor(topology, context);
-  if (loaded.kind === "error") {
-    return { kind: "error", message: loaded.message };
-  }
+  await rememberCreation(repoGit, worktreePath, {
+    as: input.as,
+    layout: input.layout ?? loaded.config.space.layout,
+  });
 
   // First worktree for this repo: write the detected config so the next run is
   // deterministic rather than re-detected.
-  let configWritten: string | undefined;
-  if (loaded.generated !== undefined) {
-    const directory = join(topology.configRoot, ".wt");
-    const file = join(directory, `${topology.repoName}.toml`);
-    await makeDir(directory, { recursive: true });
-    await writeFile(`${file}.tmp`, loaded.generated);
-    const { rename } = await import("node:fs/promises");
-    await rename(`${file}.tmp`, file);
-    configWritten = file;
-  }
+  const configWritten =
+    loaded.generated === undefined
+      ? undefined
+      : await writeGenerated(
+          topology.configRoot,
+          topology.repoName,
+          loaded.generated,
+        );
 
   const provisioning = input.provision
     ? await provision(repoGit, {

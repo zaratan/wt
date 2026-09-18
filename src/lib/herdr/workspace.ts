@@ -45,10 +45,16 @@ export type OpenSpaceResult = {
 };
 
 /**
- * Finds the space herdr has bound to this checkout. herdr is the registry:
- * `WorkspaceInfo.worktree` is filled for spaces opened through `worktree.open`,
- * so nothing has to be stored on our side.
+ * herdr is the registry: `WorkspaceInfo.worktree` is filled for spaces opened
+ * through `worktree.open`, so nothing has to be stored on our side.
  */
+export const listSpaces = async (
+  client: HerdrClient,
+): Promise<readonly WorkspaceInfo[] | undefined> => {
+  const listed = await client.call<WorkspaceListResult>("workspace.list");
+  return listed.kind === "ok" ? listed.result.workspaces : undefined;
+};
+
 export const findSpaceFor = async (
   client: HerdrClient,
   worktreePath: string,
@@ -137,12 +143,24 @@ export const openSpace = async (
     return { alreadyOpen: false, paneIds: new Map(), steps, deferred };
   }
 
-  const workspaceId = opened.result.workspace.workspace_id;
+  // The schema says these are always there; a version that disagrees would
+  // throw here, after the worktree exists. Degrade instead.
+  const workspaceId = opened.result.workspace?.workspace_id;
+  const tabId = opened.result.tab?.tab_id;
+  if (workspaceId === undefined || tabId === undefined) {
+    steps.push({
+      step: "worktree.open",
+      ok: false,
+      detail: "herdr answered worktree.open in an unexpected shape",
+    });
+    return { alreadyOpen: false, paneIds: new Map(), steps, deferred };
+  }
+
   const alreadyOpen = opened.result.already_open === true;
   steps.push({ step: "worktree.open", ok: true });
 
   const applied = await client.call<LayoutApplyResult>("layout.apply", {
-    tab_id: opened.result.tab.tab_id,
+    tab_id: tabId,
     root: input.layout,
   });
 
@@ -159,7 +177,7 @@ export const openSpace = async (
   }
   steps.push({ step: "layout.apply", ok: true });
 
-  let paneIds = collectPaneIds(applied.result.layout.root);
+  let paneIds = collectPaneIds(applied.result.layout?.root);
   if (paneIds.size === 0) {
     // The schema allows pane_id to be null; labels round-trip either way.
     const listed = await client.call<PaneListResult>("pane.list", {
@@ -221,13 +239,23 @@ export const openSpace = async (
   }
 
   if (input.focus) {
-    const focused = await client.call("workspace.focus", {
-      workspace_id: workspaceId,
+    steps.push({
+      step: "workspace.focus",
+      ok: await focusSpace(client, workspaceId),
     });
-    steps.push({ step: "workspace.focus", ok: focused.kind === "ok" });
   }
 
   return { workspaceId, alreadyOpen, paneIds, steps, deferred };
+};
+
+export const focusSpace = async (
+  client: HerdrClient,
+  workspaceId: string,
+): Promise<boolean> => {
+  const focused = await client.call("workspace.focus", {
+    workspace_id: workspaceId,
+  });
+  return focused.kind === "ok";
 };
 
 export const closeSpace = async (

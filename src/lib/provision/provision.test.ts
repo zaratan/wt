@@ -3,7 +3,12 @@ import { mkdir, readFile, stat, writeFile, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { createGit } from "../git/exec.js";
 import { provision } from "./run.js";
-import { shouldRun, EMPTY_STATE, type WorktreeState } from "./state.js";
+import {
+  shouldRun,
+  EMPTY_STATE,
+  NEVER_STATE,
+  type WorktreeState,
+} from "./state.js";
 import { DEFAULT_CONFIG, type WtConfig } from "../config/schema.js";
 import {
   addWorktree,
@@ -323,5 +328,105 @@ describe("provision", () => {
 
     expect(report.ok).toBe(true);
     expect((await stat(join(worktree, "done.txt"))).isFile()).toBe(true);
+  });
+});
+
+describe("state location and symlinks", () => {
+  it("writes wt.json in the target repo, not in the caller's", async () => {
+    const { repo, worktree } = await setup("statepath");
+    const elsewhere = await makeRepo(sandbox.root, "caller");
+
+    await provision(gitAt(elsewhere), {
+      repoRoot: repo,
+      worktreePath: worktree,
+      config: configWith({ commands: [{ run: "true", when: "always" }] }),
+      env,
+    });
+
+    const { readdir } = await import("node:fs/promises");
+    const strays = await readdir(join(elsewhere, ".git"));
+    expect(strays).not.toContain("wt.json");
+  });
+
+  it("does not throw when the caller is outside any repository", async () => {
+    const { repo, worktree } = await setup("nogit");
+    const outside = join(sandbox.root, "plain-dir");
+    await mkdir(outside, { recursive: true });
+
+    const report = await provision(createGit({ cwd: outside, env }), {
+      repoRoot: repo,
+      worktreePath: worktree,
+      config: configWith({ commands: [{ run: "true", when: "always" }] }),
+      env,
+    });
+    expect(report.ok).toBe(true);
+  });
+
+  it("rewrites a RELATIVE symlink so it still resolves from the worktree", async () => {
+    const { repo, worktree } = await setup("relsymlink");
+    const { symlink, readFile: read } = await import("node:fs/promises");
+    await mkdir(join(repo, "..", "secrets"), { recursive: true });
+    await writeFile(join(repo, "..", "secrets", "env"), "s3cret\n");
+    await symlink("../secrets/env", join(repo, ".env"));
+
+    const report = await provision(gitAt(repo), {
+      repoRoot: repo,
+      worktreePath: worktree,
+      config: configWith({ copy: [".env"] }),
+      env,
+    });
+
+    expect(report.copies[0]?.outcome).toBe("copied");
+    expect(await read(join(worktree, ".env"), "utf8")).toBe("s3cret\n");
+  });
+
+  it("skips a destination that is a broken symlink instead of failing forever", async () => {
+    const { repo, worktree } = await setup("broken");
+    const { symlink } = await import("node:fs/promises");
+    await writeFile(join(repo, ".env"), "value\n");
+    await symlink("/nowhere/at/all", join(worktree, ".env"));
+
+    const report = await provision(gitAt(repo), {
+      repoRoot: repo,
+      worktreePath: worktree,
+      config: configWith({ copy: [".env"] }),
+      env,
+    });
+    expect(report.copies[0]?.outcome).toBe("skipped");
+    expect(report.ok).toBe(true);
+  });
+});
+
+describe("a worktree with no readable state", () => {
+  const missing = () => Promise.resolve(false);
+  const present = () => Promise.resolve(true);
+
+  it("re-runs an if-missing step whose target is absent", async () => {
+    expect(
+      await shouldRun(
+        "if-missing:node_modules",
+        EMPTY_STATE,
+        "pnpm install",
+        missing,
+        "/w",
+      ),
+    ).toBe(true);
+  });
+
+  it("trusts the filesystem rather than claiming a run that never happened", async () => {
+    expect(
+      await shouldRun(
+        "if-missing:node_modules",
+        EMPTY_STATE,
+        "pnpm install",
+        present,
+        "/w",
+      ),
+    ).toBe(false);
+  });
+
+  it("reports itself to the user as never provisioned, not as a success", () => {
+    expect(NEVER_STATE.provision.state).toBe("never");
+    expect(EMPTY_STATE.provision.state).not.toBe(NEVER_STATE.provision.state);
   });
 });

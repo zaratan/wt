@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { detectTopology, MAX_UMBRELLA_SIBLINGS } from "./topology.js";
-import type { Topology, TopologyResult } from "./topology.js";
+import type { Topology, TopologyResult, UmbrellaAsk } from "./topology.js";
 import { createGit } from "./exec.js";
 import { createProbes } from "./probes.js";
 import {
@@ -27,7 +27,7 @@ const pollutedEnv = (): NodeJS.ProcessEnv => ({
 
 const detectAt = async (
   startDir: string,
-  extra: { forceUmbrella?: boolean } = {},
+  extra: { forceUmbrella?: boolean; askUmbrella?: UmbrellaAsk } = {},
 ): Promise<TopologyResult> => {
   const gitRunner = createGit({ cwd: startDir, env: pollutedEnv() });
   return detectTopology({ startDir, ...extra }, createProbes(gitRunner));
@@ -171,14 +171,51 @@ describe("detectTopology", () => {
       expect(topology.parentIsRepo).toBe(true);
     });
 
-    it("asks when nothing decides it", async () => {
+    it("stays plain when nothing decides it and nobody can be asked", async () => {
       const parent = join(sandbox.root, "undecided");
       await mkdir(parent, { recursive: true });
       const repo = await makeRepo(parent, "app");
 
       const topology = expectOk(await detectAt(repo));
-      expect(topology.umbrella).toBe("ask");
+      expect(topology.umbrella).toBe("plain");
       expect(topology.umbrellaReason).toBe("undecided");
+    });
+
+    it("takes the answer when there is someone to ask", async () => {
+      const parent = join(sandbox.root, "answered");
+      await mkdir(parent, { recursive: true });
+      const repo = await makeRepo(parent, "app");
+      const asked: string[] = [];
+
+      const topology = expectOk(
+        await detectAt(repo, {
+          askUmbrella: (question) => {
+            asked.push(question.parent);
+            return Promise.resolve(true);
+          },
+        }),
+      );
+      expect(topology.umbrella).toBe("umbrella");
+      expect(topology.umbrellaReason).toBe("answered");
+      expect(asked).toHaveLength(1);
+    });
+
+    it("never asks once a .wt/ directory has recorded the answer", async () => {
+      const parent = join(sandbox.root, "remembered");
+      await mkdir(join(parent, ".wt"), { recursive: true });
+      const repo = await makeRepo(parent, "app");
+      let asked = 0;
+
+      const topology = expectOk(
+        await detectAt(repo, {
+          askUmbrella: () => {
+            asked += 1;
+            return Promise.resolve(false);
+          },
+        }),
+      );
+      expect(topology.umbrella).toBe("umbrella");
+      expect(asked).toBe(0);
     });
 
     it("lets --umbrella / --no-umbrella override everything", async () => {

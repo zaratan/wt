@@ -5,6 +5,7 @@ import { runStatus } from "../commands/status.js";
 import { runRm } from "../commands/rm.js";
 import { runOpen } from "../commands/open.js";
 import { runProvision } from "../commands/provision.js";
+import { runConfig, type ConfigAction } from "../commands/config.js";
 import type { CommandContext } from "../commands/context.js";
 import { renderDoctor } from "../format/doctor.js";
 import { renderNew } from "../format/new.js";
@@ -14,6 +15,8 @@ import { renderRm } from "../format/rm.js";
 import { checkLayout } from "../format/layout.js";
 import { renderOpen } from "../format/open.js";
 import { renderProvision } from "../format/provision.js";
+import { zshCompletion } from "../format/completion.js";
+import { renderConfig } from "../format/config.js";
 import { EXIT } from "./exit.js";
 import type { ExitCode } from "./exit.js";
 import { flag, value } from "./parse.js";
@@ -66,7 +69,13 @@ export const dispatch = async (
       if (result.kind === "error" || result.kind === "choose") {
         return { stderr: text, code: EXIT.ERROR };
       }
-      return { stdout: text, code: EXIT.OK };
+      // The worktree exists but is not ready: a different decision for an agent
+      // than "nothing happened".
+      const incomplete =
+        result.kind === "created" &&
+        (result.provisioning?.ok === false ||
+          (result.space !== undefined && result.space.kind !== "opened"));
+      return { stdout: text, code: incomplete ? EXIT.PARTIAL : EXIT.OK };
     }
 
     case "ls": {
@@ -104,6 +113,14 @@ export const dispatch = async (
           stdout: `${JSON.stringify(result, null, 2)}\n`,
           code:
             result.kind === "ok" && result.report.ok ? EXIT.OK : EXIT.PARTIAL,
+        };
+      }
+      if (result.kind === "planned") {
+        return {
+          stdout: `Would provision ${result.worktreePath}\n${result.steps
+            .map((step) => `  ${step}`)
+            .join("\n")}\n`,
+          code: EXIT.OK,
         };
       }
       if (result.kind !== "ok") {
@@ -146,6 +163,40 @@ export const dispatch = async (
       return result.kind === "error" || result.kind === "choose"
         ? { stderr: text, code: EXIT.ERROR }
         : { stdout: text, code: EXIT.OK };
+    }
+
+    case "config": {
+      const action = invocation.positionals.action as ConfigAction | undefined;
+      if (action === undefined) {
+        return { stderr: "wt config: missing <action>\n", code: EXIT.USAGE };
+      }
+      const result = await runConfig(
+        action,
+        invocation.positionals.repo ?? value(invocation.options, "repo"),
+        context,
+      );
+      if (context.json) {
+        return {
+          stdout: `${JSON.stringify(result, null, 2)}\n`,
+          code:
+            result.kind === "error" || result.kind === "choose"
+              ? EXIT.ERROR
+              : EXIT.OK,
+        };
+      }
+      const text = renderConfig(result);
+      return result.kind === "error" || result.kind === "choose"
+        ? { stderr: text, code: EXIT.ERROR }
+        : { stdout: text, code: EXIT.OK };
+    }
+
+    case "completion": {
+      return invocation.positionals.shell === "zsh"
+        ? { stdout: zshCompletion(), code: EXIT.OK }
+        : {
+            stderr: "wt completion: only zsh is supported\n",
+            code: EXIT.USAGE,
+          };
     }
 
     case "layout": {

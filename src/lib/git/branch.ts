@@ -107,8 +107,10 @@ export const fetchBranch = async (
   remote: string,
   branch: string,
 ): Promise<FetchReport> => {
+  // The pattern matches from the END on a slash boundary, so a bare name finds
+  // `refs/heads/feature/<name>`. The full ref is the only exact question.
   const probe = await git(
-    ["ls-remote", "--exit-code", "--heads", remote, branch],
+    ["ls-remote", "--exit-code", "--heads", remote, `refs/heads/${branch}`],
     { timeoutMs: 20_000 },
   );
   if (!ran(probe)) return { kind: "unreachable", message: probe.message };

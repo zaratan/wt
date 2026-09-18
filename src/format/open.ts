@@ -23,6 +23,12 @@ export const renderOpen = (result: OpenResult): string => {
         `  path    ${result.worktreePath}`,
       );
       break;
+    case "planned":
+      lines.push(
+        `Would open "${result.label}"`,
+        `  path    ${result.worktreePath}`,
+      );
+      break;
     case "opened":
       lines.push(
         `Opened "${result.label}"`,

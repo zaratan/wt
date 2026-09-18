@@ -4,6 +4,7 @@ import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
 import { worktreeStatus, type WorktreeStatus } from "../lib/git/status.js";
 import { prune } from "../lib/git/worktree.js";
 import type { Probes, Topology } from "../lib/git/topology.js";
+import { indexSpaces, type SpaceIndex } from "./spaces.js";
 import type { CommandContext } from "./context.js";
 
 export type LsInput = {
@@ -17,6 +18,7 @@ export type OrphanDirectory = { path: string };
 export type LsReport = {
   topology: Topology;
   worktrees: readonly WorktreeStatus[];
+  spaces: SpaceIndex;
   /** Directories under the worktrees root that git does not know about. */
   orphans: readonly OrphanDirectory[];
   pruned: boolean;
@@ -119,6 +121,7 @@ export const runLs = async (
     report: {
       topology,
       worktrees: visible,
+      spaces: context.dryRun ? {} : await indexSpaces(context),
       orphans: await findOrphans(
         topology,
         entries.map((entry) => entry.path),

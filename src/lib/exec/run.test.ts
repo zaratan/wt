@@ -180,4 +180,44 @@ describe("run", () => {
     expect((await stat(marker)).size).toBe(sizeAfterKill);
     expect((await readFile(marker, "utf8")).length).toBe(sizeAfterKill);
   });
+
+  it("returns after a timeout even when a grandchild holds the pipe", async () => {
+    const started = Date.now();
+    const result = await run({
+      argv: sh("sleep 20 & exec sleep 20"),
+      cwd: dir,
+      env,
+      timeoutMs: 400,
+      killGraceMs: 150,
+    });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("expected ok");
+    expect(result.outcome.timedOut).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it("kills a grandchild that traps SIGTERM instead of answering and leaking it", async () => {
+    const marker = `wt-probe-${String(Date.now())}`;
+    const result = await run({
+      argv: sh(
+        `/bin/sh -c 'trap "" TERM; sleep 8; : ${marker}' & exec sleep 8`,
+      ),
+      cwd: dir,
+      env,
+      timeoutMs: 300,
+      killGraceMs: 2_000,
+      killProcessGroup: true,
+    });
+    expect(result.kind).toBe("ok");
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const survivors = await run({
+      argv: ["/usr/bin/pgrep", "-f", marker],
+      cwd: dir,
+      env,
+      timeoutMs: 2_000,
+    });
+    if (survivors.kind !== "ok") throw new Error("expected pgrep to run");
+    expect(survivors.outcome.stdout.trim()).toBe("");
+  });
 });

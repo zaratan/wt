@@ -9,7 +9,7 @@ import {
   readlink,
   symlink,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { run } from "../exec/run.js";
 import { scrubEnv } from "../exec/env.js";
 import { createRing } from "../exec/ring.js";
@@ -61,9 +61,20 @@ const exists = async (path: string): Promise<boolean> => {
   }
 };
 
+/** lstat, so a broken symlink counts as present and EEXIST never repeats. */
+const present = async (path: string): Promise<boolean> => {
+  try {
+    await lstat(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 /**
- * Preserves mode, and copies a symlink as a link. A `.env` symlinked into a
- * password manager must stay a link, and a key at 0600 must stay at 0600.
+ * Preserves mode, and copies a symlink as a link. A relative link is rewritten
+ * against its original directory: copied verbatim it would re-anchor on the
+ * worktree and point at nothing.
  */
 const copyEntry = async (
   from: string,
@@ -73,7 +84,11 @@ const copyEntry = async (
   await mkdir(dirname(to), { recursive: true });
 
   if (info.isSymbolicLink()) {
-    await symlink(await readlink(from), to);
+    const target = await readlink(from);
+    await symlink(
+      isAbsolute(target) ? target : resolve(dirname(from), target),
+      to,
+    );
     return "copied";
   }
   if (info.isDirectory()) {
@@ -111,11 +126,11 @@ export const provision = async (
     const from = join(repoRoot, relative);
     const to = join(worktreePath, relative);
 
-    if (!(await exists(from))) {
+    if (!(await present(from))) {
       copies.push({ path: relative, outcome: "missing" });
       continue;
     }
-    if (await exists(to)) {
+    if (await present(to)) {
       copies.push({ path: relative, outcome: "skipped" });
       continue;
     }

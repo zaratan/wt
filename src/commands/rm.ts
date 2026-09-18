@@ -1,19 +1,20 @@
 import { createProbes } from "../lib/git/probes.js";
 import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
 import { worktreeStatus, type WorktreeStatus } from "../lib/git/status.js";
-import { prune } from "../lib/git/worktree.js";
+import { prune, selectWorktree } from "../lib/git/worktree.js";
 import { preflight } from "../lib/herdr/preflight.js";
 import { closeSpace, findSpaceFor } from "../lib/herdr/workspace.js";
 import type { Topology } from "../lib/git/topology.js";
 import { gitFor } from "./ls.js";
-import { matchesTarget } from "./status.js";
+
+import { configFor } from "./provision.js";
 import type { CommandContext } from "./context.js";
 
 export type RmInput = {
   repo?: string;
   target: string;
   force: boolean;
-  /** Undefined means "keep it", which is the default. */
+  /** Undefined hands the decision to `remove.delete_branch` in the config. */
   deleteBranch?: boolean;
   keepSpace?: boolean;
 };
@@ -127,6 +128,23 @@ const closeBoundSpace = async (
     : { kind: "failed", detail: closed.detail ?? "" };
 };
 
+const wantsBranchGone = async (
+  input: RmInput,
+  topology: Topology,
+  context: CommandContext,
+): Promise<boolean> => {
+  if (input.deleteBranch !== undefined) return input.deleteBranch;
+  const loaded = await configFor(topology, context);
+  if (loaded.kind !== "ok") return false;
+  const policy = loaded.config.remove.deleteBranch;
+  if (policy === "always") return true;
+  if (policy === "never") return false;
+  const confirm = context.confirm;
+  return confirm === undefined
+    ? false
+    : await confirm(`delete the branch too? [y/N] `);
+};
+
 export const runRm = async (
   input: RmInput,
   context: CommandContext,
@@ -143,27 +161,23 @@ export const runRm = async (
   const probes = createProbes(repoGit);
 
   const entries = (await probes.git.worktrees(topology.repoRoot)) ?? [];
-  const matched = entries.filter((entry) => matchesTarget(entry, input.target));
-
-  if (matched.length === 0) {
+  const selected = selectWorktree(entries, input.target);
+  if (selected.kind === "none") {
     return {
       kind: "error",
       message: `no worktree matches '${input.target}'`,
       hint: "run `wt ls` to see what is there",
     };
   }
-  if (matched.length > 1) {
+  if (selected.kind === "many") {
     return {
       kind: "error",
-      message: `'${input.target}' matches ${String(matched.length)} worktrees`,
-      hint: matched.map((entry) => entry.path).join(", "),
+      message: `'${input.target}' matches ${String(selected.paths.length)} worktrees`,
+      hint: selected.paths.join(", "),
     };
   }
 
-  const entry = matched[0];
-  if (entry === undefined) {
-    return { kind: "error", message: "internal: no entry" };
-  }
+  const entry = selected.entry;
   if (entry.path === topology.repoRoot) {
     return {
       kind: "error",
@@ -206,13 +220,12 @@ export const runRm = async (
   const branchName = status.branch;
   let branch: BranchOutcome = { kind: "kept" };
   if (branchName !== undefined) {
-    branch =
-      input.deleteBranch === true
-        ? await deleteBranch(repoGit, topology, branchName, input.force)
-        : {
-            kind: "kept",
-            command: `git -C ${topology.repoRoot} branch -d ${branchName}`,
-          };
+    branch = (await wantsBranchGone(input, topology, context))
+      ? await deleteBranch(repoGit, topology, branchName, input.force)
+      : {
+          kind: "kept",
+          command: `git -C ${topology.repoRoot} branch -d ${branchName}`,
+        };
   }
 
   return { kind: "removed", status, branch, forced: input.force, space };

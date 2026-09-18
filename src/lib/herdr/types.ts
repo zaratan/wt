@@ -23,10 +23,11 @@ export type PaneInfo = {
   foreground_cwd?: string;
 };
 
+/** Everything optional: this is what a foreign process sent us, not our own data. */
 export type WorktreeOpenResult = {
-  workspace: WorkspaceInfo;
-  tab: TabInfo;
-  root_pane: PaneInfo;
+  workspace?: WorkspaceInfo;
+  tab?: TabInfo;
+  root_pane?: PaneInfo;
   already_open?: boolean;
 };
 
@@ -39,10 +40,10 @@ export type LayoutNodeReply = {
 };
 
 export type LayoutApplyResult = {
-  layout: {
-    workspace_id: string;
-    tab_id: string;
-    root: LayoutNodeReply;
+  layout?: {
+    workspace_id?: string;
+    tab_id?: string;
+    root?: LayoutNodeReply;
   };
 };
 

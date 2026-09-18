@@ -7,7 +7,8 @@ const REASONS: Record<UmbrellaReason, string> = {
   "declared-repo": "the repository has a .wt/ directory",
   "too-many-siblings": "the parent holds too many entries to be an umbrella",
   "parent-ignores-repo": "the parent is a repo that gitignores this one",
-  undecided: "nothing decided it — wt will ask once and remember",
+  answered: "you answered the question, and .wt/ now records it",
+  undecided: "nothing decided it, and nobody could be asked: treated as plain",
   forced: "forced on the command line",
 };
 

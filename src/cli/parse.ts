@@ -109,6 +109,27 @@ const validatePositionals = (
 
 const DEFAULT_COMMAND = "ls";
 
+/**
+ * Skips the VALUE of a global option given before the command. Without this,
+ * `wt --repo new ls` dispatches `new` with branch `ls`, and creates it.
+ */
+const OPTIONS_TAKING_A_VALUE: readonly OptionSpec[] = [
+  ...GLOBAL_OPTIONS,
+  ...COMMANDS.flatMap((command) => command.options),
+].filter((option) => option.arity === "required");
+
+const findCommandToken = (head: readonly string[]): string | undefined => {
+  for (let index = 0; index < head.length; index += 1) {
+    const token = head[index];
+    if (token === undefined) continue;
+
+    if (!token.startsWith("-") || token === "-") return token;
+    if (token.includes("=")) continue;
+    if (matchOption(token, OPTIONS_TAKING_A_VALUE) !== undefined) index += 1;
+  }
+  return undefined;
+};
+
 export const parse = (argv: readonly string[]): ParseResult => {
   const separator = argv.indexOf("--");
   const head = separator === -1 ? argv : argv.slice(0, separator);
@@ -118,7 +139,7 @@ export const parse = (argv: readonly string[]): ParseResult => {
   const wantsHelp = head.includes("--help") || head.includes("-h");
   const wantsVersion = head.includes("--version") || head.includes("-V");
 
-  const commandToken = head.find((token) => !token.startsWith("-"));
+  const commandToken = findCommandToken(head);
 
   if (wantsVersion) return { kind: "version" };
 

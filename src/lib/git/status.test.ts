@@ -195,3 +195,79 @@ describe("hasUnsavedWork", () => {
     expect(hasUnsavedWork(await statusOf(clone))).toBe(true);
   });
 });
+
+describe("operation markers from a third-party cwd", () => {
+  it("sees a merge in the MAIN checkout when wt runs from elsewhere", async () => {
+    const repo = await makeRepo(sandbox.root, "merging-main");
+    await writeFile(join(repo, "f.txt"), "base\n");
+    await git(repo, "add", "f.txt");
+    await git(repo, "commit", "--quiet", "-m", "base");
+
+    await git(repo, "checkout", "--quiet", "-b", "other");
+    await writeFile(join(repo, "f.txt"), "theirs\n");
+    await git(repo, "commit", "--quiet", "-am", "theirs");
+    await git(repo, "checkout", "--quiet", "main");
+    await writeFile(join(repo, "f.txt"), "ours\n");
+    await git(repo, "commit", "--quiet", "-am", "ours");
+
+    const merge = await git(repo, "merge", "other").catch(
+      (error: unknown) => error,
+    );
+    expect(merge).toBeInstanceOf(Error);
+
+    const elsewhere = await makeRepo(sandbox.root, "unrelated");
+    const runner = createGit({
+      cwd: elsewhere,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, LC_ALL: "C" },
+    });
+    const probes = createProbes(runner);
+    const entries = (await probes.git.worktrees(repo)) ?? [];
+    const entry = entries[0];
+    if (entry === undefined) throw new Error("no entry");
+
+    const status = await worktreeStatus(runner, {
+      entry,
+      repoRoot: repo,
+      worktreesRoot: join(repo, "..", ".worktrees"),
+      exists: probes.fs.exists,
+    });
+    expect(status.operation).toBe("merge");
+
+    await git(repo, "merge", "--abort");
+  });
+
+  it("does not report a clean repo as merging because the caller is", async () => {
+    const clean = await makeRepo(sandbox.root, "clean-target");
+
+    const merging = await makeRepo(sandbox.root, "merging-caller");
+    await writeFile(join(merging, "f.txt"), "base\n");
+    await git(merging, "add", "f.txt");
+    await git(merging, "commit", "--quiet", "-m", "base");
+    await git(merging, "checkout", "--quiet", "-b", "other");
+    await writeFile(join(merging, "f.txt"), "theirs\n");
+    await git(merging, "commit", "--quiet", "-am", "theirs");
+    await git(merging, "checkout", "--quiet", "main");
+    await writeFile(join(merging, "f.txt"), "ours\n");
+    await git(merging, "commit", "--quiet", "-am", "ours");
+    await git(merging, "merge", "other").catch(() => undefined);
+
+    const runner = createGit({
+      cwd: merging,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, LC_ALL: "C" },
+    });
+    const probes = createProbes(runner);
+    const entries = (await probes.git.worktrees(clean)) ?? [];
+    const entry = entries[0];
+    if (entry === undefined) throw new Error("no entry");
+
+    const status = await worktreeStatus(runner, {
+      entry,
+      repoRoot: clean,
+      worktreesRoot: join(clean, "..", ".worktrees"),
+      exists: probes.fs.exists,
+    });
+    expect(status.operation).toBeUndefined();
+
+    await git(merging, "merge", "--abort");
+  });
+});

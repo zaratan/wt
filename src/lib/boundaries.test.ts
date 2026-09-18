@@ -47,6 +47,22 @@ describe("architecture boundaries", () => {
       );
       expect(fired).not.toContain(RESTRICTED_IMPORTS);
     });
+
+    it("bans it in commands/, where the ink probe alone would not notice", async () => {
+      const fired = await rulesFiredAt(
+        "src/commands/__probe_spawn.ts",
+        `import { spawn } from "node:child_process";\nexport const x = spawn;\n`,
+      );
+      expect(fired).toContain(RESTRICTED_IMPORTS);
+    });
+
+    it("bans it in format/, which only ever formats", async () => {
+      const fired = await rulesFiredAt(
+        "src/format/__probe_spawn.ts",
+        `import { spawn } from "node:child_process";\nexport const x = spawn;\n`,
+      );
+      expect(fired).toContain(RESTRICTED_IMPORTS);
+    });
   });
 
   describe("ambient process state", () => {

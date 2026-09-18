@@ -9,5 +9,7 @@ export type CommandContext = {
   verbose: boolean;
   dryRun: boolean;
   interactive: boolean;
+  /** Present only on a terminal that may be questioned: absent means "no". */
+  confirm?: (question: string) => Promise<boolean>;
   trace?: (line: string) => void;
 };

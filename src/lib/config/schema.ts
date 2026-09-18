@@ -10,7 +10,7 @@ export type ProvisionCommand = {
 
 export type WtConfig = {
   schema: number;
-  repo: { path?: string; defaultBase?: string; remote?: string };
+  repo: { defaultBase?: string; remote?: string };
   space: { label?: string; layout?: string };
   provision: {
     copy: readonly string[];
@@ -43,9 +43,9 @@ export type ValidationResult =
 
 const KNOWN_SECTIONS = ["repo", "space", "provision", "remove"] as const;
 const KNOWN_KEYS: Record<string, readonly string[]> = {
-  repo: ["path", "default_base", "remote"],
-  space: ["label", "layout", "env"],
-  provision: ["copy", "link", "timeout_ms", "commands"],
+  repo: ["default_base", "remote"],
+  space: ["label", "layout"],
+  provision: ["copy", "timeout_ms", "commands"],
   remove: ["delete_branch"],
 };
 
@@ -113,7 +113,6 @@ export const validateConfig = (
   const config: Partial<WtConfig> = {
     schema,
     repo: {
-      path: asString(repo.path),
       defaultBase: asString(repo.default_base),
       remote: asString(repo.remote),
     },
@@ -155,7 +154,6 @@ export const mergeConfigs = (
   return {
     schema: CURRENT_SCHEMA,
     repo: {
-      path: pick((layer) => layer.repo?.path),
       defaultBase: pick((layer) => layer.repo?.defaultBase),
       remote: pick((layer) => layer.repo?.remote),
     },

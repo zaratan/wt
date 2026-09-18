@@ -106,6 +106,22 @@ sens (elle mord là où il faut, elle ne mord pas sur l'exception).
 - **`check-ignore` renvoie 128 hors dépôt**, pas 1. Tester `!== 0` lit « non ignoré »
   dans « pas un dépôt ».
 
+## Décisions câblées, pas seulement déclarées
+
+Un champ de config accepté puis ignoré est une panne silencieuse. Le schéma ne
+déclare donc **que** ce qui est lu : `repo.default_base`, `repo.remote`,
+`space.label`, `space.layout`, `provision.{copy,timeout_ms,commands}`,
+`remove.delete_branch`. Toute autre clé produit un warning et apparaît dans
+`wt doctor`. Ajouter un champ ⇒ l'utiliser dans le même diff, ou ne pas l'ajouter.
+
+**Le verdict umbrella est toujours tranché.** Il n'y a pas d'état `ask` : quand
+aucune règle ne décide, `wt new` et `wt config` posent la question sur un vrai
+terminal via `context.confirm`, et la réponse est mémorisée en créant `.wt/` du
+côté choisi — le même marqueur que `declared-parent` / `declared-repo` relisent.
+Sans terminal (`--json`, `--yes`, pipe), le verdict est `plain` avec la raison
+`undecided`, que `wt doctor` affiche. `context.confirm` est absent hors TTY, donc
+« personne à qui demander » vaut toujours « non ».
+
 ## Codes de sortie
 
 |     |                                                                           |

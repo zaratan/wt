@@ -30,13 +30,14 @@ export type FsProbe = {
 
 export type Probes = { git: GitProbe; fs: FsProbe };
 
-export type UmbrellaVerdict = "umbrella" | "plain" | "ask";
+export type UmbrellaVerdict = "umbrella" | "plain";
 
 export type UmbrellaReason =
   | "declared-parent"
   | "declared-repo"
   | "too-many-siblings"
   | "parent-ignores-repo"
+  | "answered"
   | "undecided"
   | "forced";
 
@@ -45,7 +46,12 @@ export type GuardId =
   | "worktrees-root-in-foreign-repo"
   | "worktrees-root-inside-repo";
 
-export type Guard = { id: GuardId; violated: boolean; message: string };
+export type Guard = {
+  id: GuardId;
+  violated: boolean;
+  message: string;
+  fix?: string;
+};
 
 export type Topology = {
   /** The main worktree, never a linked one. */
@@ -78,6 +84,7 @@ export type TopologyInput = {
   startDir: string;
   forceUmbrella?: boolean;
   worktreesDir?: string;
+  askUmbrella?: UmbrellaAsk;
 };
 
 export const WORKTREES_DIR = ".worktrees";
@@ -89,12 +96,20 @@ export const MAX_UMBRELLA_SIBLINGS = 25;
 const isInsideGitDir = (path: string): boolean =>
   path.split(sep).includes(".git");
 
+export type UmbrellaQuestion = { parent: string; repoRoot: string };
+
+/** Answers the question and records the answer; undefined means "cannot ask". */
+export type UmbrellaAsk = (
+  question: UmbrellaQuestion,
+) => Promise<boolean | undefined>;
+
 const decideUmbrella = async (
   parent: string,
   repoRoot: string,
   parentIsRepo: boolean,
   probes: Probes,
   forced: boolean | undefined,
+  ask: UmbrellaAsk | undefined,
 ): Promise<{ verdict: UmbrellaVerdict; reason: UmbrellaReason }> => {
   if (forced !== undefined) {
     return { verdict: forced ? "umbrella" : "plain", reason: "forced" };
@@ -122,7 +137,13 @@ const decideUmbrella = async (
     }
   }
 
-  return { verdict: "ask", reason: "undecided" };
+  const answer =
+    ask === undefined ? undefined : await ask({ parent, repoRoot });
+  if (answer !== undefined) {
+    return { verdict: answer ? "umbrella" : "plain", reason: "answered" };
+  }
+
+  return { verdict: "plain", reason: "undecided" };
 };
 
 const buildGuards = async (
@@ -133,29 +154,50 @@ const buildGuards = async (
 ): Promise<Guard[]> => {
   const guards: Guard[] = [];
 
-  const rootWorktrees = await probes.git.worktrees(worktreesRoot);
+  // Probe the PARENT, not worktreesRoot: the latter does not exist on a first
+  // run, so the guard would stay silent then block forever once created.
+  const enclosing = await probes.git.worktrees(parent);
+  const enclosingRoot =
+    enclosing === undefined
+      ? undefined
+      : await probes.fs.realpath(enclosing[0]?.path ?? "");
+
+  const rootExists = await probes.fs.exists(worktreesRoot);
   const rootIsRepoItself =
-    rootWorktrees !== undefined &&
-    (await probes.fs.realpath(rootWorktrees[0]?.path ?? "")) ===
-      (await probes.fs.realpath(worktreesRoot));
+    rootExists &&
+    (await probes.fs.realpath(
+      (await probes.git.worktrees(worktreesRoot))?.[0]?.path ?? "",
+    )) === (await probes.fs.realpath(worktreesRoot));
 
   guards.push({
     id: "worktrees-root-is-a-repo",
     violated: rootIsRepoItself,
     message: `${worktreesRoot} is itself a git repository; worktrees cannot live inside it`,
+    fix: `move or rename ${worktreesRoot}, then run wt again`,
   });
 
-  // Inside the parent repo is fine: .gitignore covers it. A different one is not.
+  // Being inside a repo is only a problem if that repo will track the
+  // worktrees. `ensureIgnored` is the remedy wt applies itself, so an ignored
+  // location is fine wherever it sits.
+  const ignored =
+    enclosingRoot === undefined
+      ? "outside-repo"
+      : await probes.git.checkIgnore(enclosingRoot, `${WORKTREES_DIR}/`);
+
   const foreign =
-    rootWorktrees !== undefined &&
+    enclosingRoot !== undefined &&
     !rootIsRepoItself &&
-    (await probes.fs.realpath(rootWorktrees[0]?.path ?? "")) !==
-      (await probes.fs.realpath(parent));
+    enclosingRoot !== (await probes.fs.realpath(parent)) &&
+    ignored !== "ignored";
 
   guards.push({
     id: "worktrees-root-in-foreign-repo",
     violated: foreign,
-    message: `${worktreesRoot} sits inside a git repository that is not ${parent}`,
+    message: `${worktreesRoot} sits inside ${enclosingRoot ?? "another repository"}, which would track it`,
+    fix:
+      enclosingRoot === undefined
+        ? undefined
+        : `printf '/%s/\\n' ${WORKTREES_DIR} >> ${enclosingRoot}/.gitignore`,
   });
 
   guards.push({
@@ -163,6 +205,7 @@ const buildGuards = async (
     violated:
       worktreesRoot === repoRoot || worktreesRoot.startsWith(repoRoot + sep),
     message: `${worktreesRoot} is inside the repository itself`,
+    fix: `run wt from ${parent} instead of from inside ${repoRoot}`,
   });
 
   return guards;
@@ -261,6 +304,7 @@ export const detectTopology = async (
     parentIsRepo,
     probes,
     input.forceUmbrella,
+    input.askUmbrella,
   );
 
   const contextRoot = verdict === "umbrella" ? parent : repoRoot;

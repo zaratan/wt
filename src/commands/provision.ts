@@ -1,5 +1,4 @@
 import { readFile, stat } from "node:fs/promises";
-import { relative } from "node:path";
 import { createProbes } from "../lib/git/probes.js";
 import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
 import { loadConfig } from "../lib/config/load.js";
@@ -9,13 +8,14 @@ import { provision, type ProvisionReport } from "../lib/provision/run.js";
 import type { WtConfig } from "../lib/config/schema.js";
 import type { Topology } from "../lib/git/topology.js";
 import { gitFor } from "./ls.js";
-import { matchesTarget } from "./status.js";
+import { selectWorktree } from "../lib/git/worktree.js";
 import type { CommandContext } from "./context.js";
 
 export type ProvisionInput = { repo?: string; branch: string };
 
 export type ProvisionResult =
   | { kind: "ok"; report: ProvisionReport; worktreePath: string }
+  | { kind: "planned"; worktreePath: string; steps: readonly string[] }
   | { kind: "choose"; from: string; candidates: readonly RepoCandidate[] }
   | { kind: "error"; message: string; hint?: string };
 
@@ -91,10 +91,8 @@ export const configFor = async (
     fileProbe,
   );
 
-  const relativePath = relative(topology.configRoot, topology.repoRoot);
   const generated = generateConfig({
     repoName: topology.repoName,
-    repoPath: relativePath === "" ? "." : relativePath,
     detected,
     umbrella: topology.umbrella === "umbrella",
     devCommandInLayout: true,
@@ -124,19 +122,38 @@ export const runProvision = async (
   const probes = createProbes(repoGit);
 
   const entries = (await probes.git.worktrees(topology.repoRoot)) ?? [];
-  const entry = entries.find((candidate) =>
-    matchesTarget(candidate, input.branch),
-  );
-  if (entry === undefined) {
+  const selected = selectWorktree(entries, input.branch);
+  if (selected.kind === "none") {
     return {
       kind: "error",
       message: `no worktree matches '${input.branch}'`,
       hint: "run `wt ls` to see what is there",
     };
   }
+  if (selected.kind === "many") {
+    return {
+      kind: "error",
+      message: `'${input.branch}' matches ${String(selected.paths.length)} worktrees`,
+      hint: selected.paths.join(", "),
+    };
+  }
+  const entry = selected.entry;
 
   const config = await configFor(topology, context);
   if (config.kind === "error") return config;
+
+  if (context.dryRun) {
+    return {
+      kind: "planned",
+      worktreePath: entry.path,
+      steps: [
+        ...config.config.provision.copy.map((path) => `copy ${path}`),
+        ...config.config.provision.commands.map(
+          (command) => `${command.run}   (${command.when})`,
+        ),
+      ],
+    };
+  }
 
   return {
     kind: "ok",

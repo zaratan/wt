@@ -140,6 +140,10 @@ export const run = async (options: RunOptions): Promise<RunResult> => {
     const settle = (result: RunResult): void => {
       if (settled) return;
       settled = true;
+      // cleanup() clears the pending SIGKILL. The direct child can die on
+      // SIGTERM while a grandchild traps it, so escalate now instead of
+      // answering the caller and leaking the process tree.
+      if (graceTimer !== undefined && (timedOut || aborted)) kill("SIGKILL");
       cleanup();
       resolve(result);
     };
@@ -173,6 +177,26 @@ export const run = async (options: RunOptions): Promise<RunResult> => {
         message: error.message,
         durationMs: elapsed(),
       });
+    });
+
+    // "close" waits for the stdio streams, not for the process: a grandchild
+    // holding the pipe keeps it open forever after a timeout kill. "exit" fires
+    // on the process itself; give the streams a moment, then answer anyway.
+    child.on("exit", (code, exitSignal) => {
+      setTimeout(() => {
+        settle({
+          kind: "ok",
+          outcome: {
+            code,
+            signal: exitSignal,
+            stdout,
+            stderr,
+            timedOut,
+            aborted,
+            durationMs: elapsed(),
+          },
+        });
+      }, 50).unref();
     });
 
     child.on("close", (code, closeSignal) => {

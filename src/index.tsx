@@ -5,6 +5,7 @@ import { renderHelp } from "./cli/help.js";
 import { dispatch } from "./cli/dispatch.js";
 import { EXIT } from "./cli/exit.js";
 import type { CommandContext } from "./commands/context.js";
+import { askConfirm } from "./lib/tty/confirm.js";
 import { APP_VERSION } from "./version.js";
 
 // The only place that reads ambient process state; everything below takes it
@@ -49,6 +50,12 @@ switch (result.kind) {
     const verbose = flag(options, "verbose", false);
     const cwdOverride = value(options, "cwd");
 
+    const interactive =
+      process.stdout.isTTY &&
+      process.stdin.isTTY &&
+      !json &&
+      !flag(options, "yes", false);
+
     const context: CommandContext = {
       cwd:
         cwdOverride === undefined
@@ -60,7 +67,14 @@ switch (result.kind) {
       yes: json || flag(options, "yes", false),
       verbose,
       dryRun: flag(options, "dry-run", false),
-      interactive: process.stdout.isTTY,
+      interactive,
+      confirm: interactive
+        ? (question) =>
+            askConfirm(
+              { input: process.stdin, output: process.stderr },
+              question,
+            )
+        : undefined,
       trace: verbose
         ? (line) => {
             process.stderr.write(`${line}\n`);

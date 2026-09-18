@@ -254,3 +254,63 @@ describe("wt new", () => {
     expect(result.plan.topology.repoName).toBe("two");
   });
 });
+
+describe("config drives wt new", () => {
+  it("labels the space from space.label rather than the built-in shape", async () => {
+    const parent = join(sandbox.root, "label-template");
+    await mkdir(parent, { recursive: true });
+    const repo = await makeRepo(parent, "app");
+    await mkdir(join(repo, ".wt"), { recursive: true });
+    await writeFile(
+      join(repo, ".wt", "app.toml"),
+      'schema = 1\n[space]\nlabel = "{repo}:{as} <{branch}>"\n',
+    );
+
+    const created = await runNew(
+      {
+        branch: "feat/x",
+        as: "X",
+        fetch: false,
+        gitignore: false,
+        open: false,
+        focus: false,
+        provision: false,
+      },
+      contextAt(repo),
+    );
+    if (created.kind !== "created") throw new Error(created.kind);
+    expect(created.plan.label).toBe("app:X <feat/x>");
+  });
+
+  it("branches from repo.default_base when --from is absent", async () => {
+    const parent = join(sandbox.root, "based");
+    await mkdir(parent, { recursive: true });
+    const repo = await makeRepo(parent, "app");
+    await git(repo, "branch", "develop");
+    await git(repo, "checkout", "develop");
+    await git(repo, "commit", "--allow-empty", "-m", "only on develop");
+    await git(repo, "checkout", "main");
+    await mkdir(join(repo, ".wt"), { recursive: true });
+    await writeFile(
+      join(repo, ".wt", "app.toml"),
+      'schema = 1\n[repo]\ndefault_base = "develop"\n',
+    );
+
+    const created = await runNew(
+      {
+        branch: "feat/from-develop",
+        fetch: false,
+        gitignore: false,
+        open: false,
+        focus: false,
+        provision: false,
+      },
+      contextAt(repo),
+    );
+    if (created.kind !== "created") throw new Error(created.kind);
+    if (created.plan.branchPlan.kind !== "create") {
+      throw new Error(created.plan.branchPlan.kind);
+    }
+    expect(created.plan.branchPlan.base).toBe("develop");
+  });
+});

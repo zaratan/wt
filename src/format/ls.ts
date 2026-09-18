@@ -67,8 +67,10 @@ export const renderLs = (result: LsResult): string => {
   if (report.worktrees.length === 0) {
     lines.push("  no worktrees");
   } else {
+    const spaces = report.spaces.byCheckout;
     const rows = report.worktrees.map((status) => ({
       status,
+      space: spaces?.get(status.path),
       name: status.isMain
         ? `${basename(status.path)} (main)`
         : basename(status.path),
@@ -80,8 +82,16 @@ export const renderLs = (result: LsResult): string => {
     const branchWidth = Math.max(...rows.map((row) => row.branch.length));
 
     for (const row of rows) {
+      const space =
+        row.space === undefined
+          ? []
+          : [
+              `space ${row.space.focused ? "focused" : "open"}${
+                row.space.label === undefined ? "" : ` (${row.space.label})`
+              }`,
+            ];
       lines.push(
-        `  ${marker(row.status)} ${pad(row.name, nameWidth)}  ${pad(row.branch, branchWidth)}  ${row.detail.join(", ")}`.trimEnd(),
+        `  ${marker(row.status)} ${pad(row.name, nameWidth)}  ${pad(row.branch, branchWidth)}  ${[...space, ...row.detail].join(", ")}`.trimEnd(),
       );
     }
   }
@@ -89,6 +99,11 @@ export const renderLs = (result: LsResult): string => {
   if (report.orphans.length > 0) {
     lines.push("", "Directories git does not know about:");
     for (const orphan of report.orphans) lines.push(`  ? ${orphan.path}`);
+  }
+
+  const unavailable = report.spaces.unavailable;
+  if (unavailable !== undefined) {
+    lines.push("", `  herdr not reachable, spaces unknown: ${unavailable}`);
   }
 
   if (report.pruned) lines.push("", "  (pruned stale entries)");

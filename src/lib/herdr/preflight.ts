@@ -60,6 +60,9 @@ export type PreflightOptions = {
   env: NodeJS.ProcessEnv;
   cwd: string;
   trace?: (line: string) => void;
+  /** Read-only commands decorate their output with herdr; they do not wait for it. */
+  callTimeoutMs?: number;
+  skipStatusFallback?: boolean;
 };
 
 export const preflight = async (
@@ -71,7 +74,11 @@ export const preflight = async (
     socketPath: string,
   ): Promise<HerdrHealth | undefined> => {
     tried.push(socketPath);
-    const client = createHerdrClient({ socketPath, trace: options.trace });
+    const client = createHerdrClient({
+      socketPath,
+      trace: options.trace,
+      callTimeoutMs: options.callTimeoutMs,
+    });
     const pong = await client.call<Pong>("ping");
     return pong.kind === "ok"
       ? { kind: "ok", socketPath, pong: pong.result, client }
@@ -85,9 +92,10 @@ export const preflight = async (
 
   // `herdr status` answers for the default session, so asking it would
   // undo the pin just as surely.
-  const fromStatus = socketWasPinned(options.env)
-    ? undefined
-    : await socketFromStatus(options.env, options.cwd);
+  const fromStatus =
+    socketWasPinned(options.env) || options.skipStatusFallback === true
+      ? undefined
+      : await socketFromStatus(options.env, options.cwd);
   if (fromStatus !== undefined && !tried.includes(fromStatus)) {
     const health = await attempt(fromStatus);
     if (health !== undefined) return health;

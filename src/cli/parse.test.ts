@@ -199,3 +199,25 @@ describe("parse", () => {
     });
   });
 });
+
+describe("global options given before the command", () => {
+  it("does not mistake an option value for the command", () => {
+    expect(asRun(run("--cwd /some/path ls")).spec.name).toBe("ls");
+    expect(asRun(run("--repo tercioapp ls")).spec.name).toBe("ls");
+  });
+
+  it("does not mistake a value that looks like a command", () => {
+    expect(asRun(run("--cwd status ls")).spec.name).toBe("ls");
+    expect(value(asRun(run("--cwd status ls")).options, "cwd")).toBe("status");
+  });
+
+  it("does not turn `--repo new ls` into creating a branch called ls", () => {
+    const invocation = asRun(run("--repo new ls"));
+    expect(invocation.spec.name).toBe("ls");
+    expect(invocation.positionals.branch).toBeUndefined();
+  });
+
+  it("still finds the command after an inline option value", () => {
+    expect(asRun(run("--cwd=/tmp ls")).spec.name).toBe("ls");
+  });
+});

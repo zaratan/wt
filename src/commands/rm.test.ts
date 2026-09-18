@@ -66,6 +66,11 @@ const makeWorktreeWithoutRemote = async (
   return { repo, worktree: await addWorktreeTo(repo, branch) };
 };
 
+const writeRepoConfig = async (repo: string, body: string): Promise<void> => {
+  await mkdir(join(repo, ".wt"), { recursive: true });
+  await writeFile(join(repo, ".wt", "app.toml"), `schema = 1\n${body}\n`);
+};
+
 const expectRemoved = (result: RmResult) => {
   if (result.kind !== "removed") {
     throw new Error(
@@ -283,5 +288,85 @@ describe("findings", () => {
     await writeFile(join(clone, "dirty.txt"), "x\n");
     const dirty = await statusNow();
     expect(findings(dirty).length > 0).toBe(hasUnsavedWork(dirty));
+  });
+});
+
+describe("remove.delete_branch", () => {
+  it("deletes the branch on its own when the config says always", async () => {
+    const { repo, worktree } = await makeWorktreeWithoutRemote("policy-always");
+    await writeRepoConfig(repo, '[remove]\ndelete_branch = "always"');
+    await git(worktree, "commit", "--allow-empty", "-m", "work");
+
+    const result = expectRemoved(
+      await runRm(
+        { target: "feat/x", force: true, keepSpace: true },
+        contextAt(repo),
+      ),
+    );
+    expect(result.branch.kind).toBe("deleted");
+  });
+
+  it("keeps the branch when the config says never, even on a TTY", async () => {
+    const { repo } = await makeWorktreeWithoutRemote("policy-never");
+    await writeRepoConfig(repo, '[remove]\ndelete_branch = "never"');
+
+    const result = expectRemoved(
+      await runRm(
+        { target: "feat/x", force: true, keepSpace: true },
+        contextAt(repo, { confirm: () => Promise.resolve(true) }),
+      ),
+    );
+    expect(result.branch.kind).toBe("kept");
+  });
+
+  it("asks before deleting when the config says ask", async () => {
+    const { repo } = await makeWorktreeWithoutRemote("policy-ask");
+    await writeRepoConfig(repo, '[remove]\ndelete_branch = "ask"');
+    const asked: string[] = [];
+
+    const result = expectRemoved(
+      await runRm(
+        { target: "feat/x", force: true, keepSpace: true },
+        contextAt(repo, {
+          confirm: (question) => {
+            asked.push(question);
+            return Promise.resolve(true);
+          },
+        }),
+      ),
+    );
+    expect(asked).toHaveLength(1);
+    expect(result.branch.kind).toBe("deleted");
+  });
+
+  it("keeps the branch when ask has nobody to ask", async () => {
+    const { repo } = await makeWorktreeWithoutRemote("policy-ask-headless");
+    await writeRepoConfig(repo, '[remove]\ndelete_branch = "ask"');
+
+    const result = expectRemoved(
+      await runRm(
+        { target: "feat/x", force: true, keepSpace: true },
+        contextAt(repo),
+      ),
+    );
+    expect(result.branch.kind).toBe("kept");
+  });
+
+  it("obeys --keep-branch over an always policy", async () => {
+    const { repo } = await makeWorktreeWithoutRemote("policy-override");
+    await writeRepoConfig(repo, '[remove]\ndelete_branch = "always"');
+
+    const result = expectRemoved(
+      await runRm(
+        {
+          target: "feat/x",
+          force: true,
+          keepSpace: true,
+          deleteBranch: false,
+        },
+        contextAt(repo),
+      ),
+    );
+    expect(result.branch.kind).toBe("kept");
   });
 });

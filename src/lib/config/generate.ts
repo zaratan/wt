@@ -2,8 +2,6 @@ import type { Detected } from "./detect.js";
 
 export type GenerateInput = {
   repoName: string;
-  /** Relative to the directory holding `.wt/`, or "." for a plain repo. */
-  repoPath: string;
   detected: Detected;
   umbrella: boolean;
   devCommandInLayout: boolean;
@@ -38,6 +36,18 @@ const layoutFor = (input: GenerateInput): string =>
     ? `(@parent:claude | (@wt _ @wt:${input.detected.devCommand}))`
     : "(@parent:claude | @wt)";
 
+const repoBlock = (detected: Detected): string[] => {
+  const lines = [
+    ...(detected.defaultBase === undefined
+      ? []
+      : [`default_base = ${quote(detected.defaultBase)}`]),
+    ...(detected.remote === undefined
+      ? []
+      : [`remote = ${quote(detected.remote)}`]),
+  ];
+  return lines.length === 0 ? [] : ["[repo]", ...lines, ""];
+};
+
 export const generateConfig = (input: GenerateInput): string => {
   const { detected } = input;
 
@@ -57,15 +67,7 @@ export const generateConfig = (input: GenerateInput): string => {
   return [
     "schema = 1",
     "",
-    "[repo]",
-    `path = ${quote(input.repoPath)}`,
-    ...(detected.defaultBase === undefined
-      ? []
-      : [`default_base = ${quote(detected.defaultBase)}`]),
-    ...(detected.remote === undefined
-      ? []
-      : [`remote = ${quote(detected.remote)}`]),
-    "",
+    ...repoBlock(detected),
     "[space]",
     `label = ${quote(input.umbrella ? "{parent} - {as}" : "{repo} - {as}")}`,
     `layout = ${quote(layoutFor(input))}`,

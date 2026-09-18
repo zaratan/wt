@@ -1,6 +1,7 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { Git } from "./exec.js";
 import type { BranchPlan } from "./branch.js";
+import type { WorktreeEntry } from "./topology.js";
 
 export type AddOutcome =
   | { kind: "created"; path: string }
@@ -72,6 +73,38 @@ export const initSubmodules = async (
 
 export const prune = async (git: Git, repoRoot: string): Promise<void> => {
   await git(["worktree", "prune"], { cwd: repoRoot });
+};
+
+export type Selection =
+  | { kind: "one"; entry: WorktreeEntry }
+  | { kind: "none" }
+  | { kind: "many"; paths: readonly string[] };
+
+/** Any handle `wt ls` prints: the branch, the directory name, or a path. */
+export const matchesTarget = (
+  entry: WorktreeEntry,
+  target: string,
+): boolean => {
+  const name = basename(entry.path);
+  return (
+    entry.branch === target ||
+    name === target ||
+    entry.path === target ||
+    entry.path.endsWith(`/${target}`)
+  );
+};
+
+export const selectWorktree = (
+  entries: readonly WorktreeEntry[],
+  target: string,
+): Selection => {
+  const matched = entries.filter((entry) => matchesTarget(entry, target));
+  const first = matched[0];
+  if (first === undefined) return { kind: "none" };
+  if (matched.length > 1) {
+    return { kind: "many", paths: matched.map((entry) => entry.path) };
+  }
+  return { kind: "one", entry: first };
 };
 
 export const worktreePathFor = (

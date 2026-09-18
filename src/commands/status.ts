@@ -1,9 +1,11 @@
-import { basename } from "node:path";
 import { createProbes } from "../lib/git/probes.js";
 import { resolveRepo, type RepoCandidate } from "../lib/git/resolve.js";
 import { worktreeStatus, type WorktreeStatus } from "../lib/git/status.js";
-import type { Topology, WorktreeEntry } from "../lib/git/topology.js";
+import { matchesTarget } from "../lib/git/worktree.js";
+import type { Topology } from "../lib/git/topology.js";
 import { gitFor, pruneIfStale } from "./ls.js";
+import { readCreation, type WorktreeState } from "../lib/provision/state.js";
+import { indexSpaces, type OpenSpace, type SpaceIndex } from "./spaces.js";
 import type { CommandContext } from "./context.js";
 
 export type StatusInput = {
@@ -12,32 +14,22 @@ export type StatusInput = {
   target?: string;
 };
 
+export type WorktreeDetail = {
+  status: WorktreeStatus;
+  state: WorktreeState;
+  space?: OpenSpace;
+};
+
 export type StatusReport = {
   topology: Topology;
-  statuses: readonly WorktreeStatus[];
+  details: readonly WorktreeDetail[];
+  spaces: SpaceIndex;
 };
 
 export type StatusResult =
   | { kind: "ok"; report: StatusReport }
   | { kind: "choose"; from: string; candidates: readonly RepoCandidate[] }
   | { kind: "error"; message: string; hint?: string };
-
-/**
- * Accepts whichever handle is at hand: the branch, the directory name, or a
- * path. `wt ls` prints all three, so anything copied from it works.
- */
-export const matchesTarget = (
-  entry: WorktreeEntry,
-  target: string,
-): boolean => {
-  const name = basename(entry.path);
-  return (
-    entry.branch === target ||
-    name === target ||
-    entry.path === target ||
-    entry.path.endsWith(`/${target}`)
-  );
-};
 
 export const runStatus = async (
   input: StatusInput,
@@ -72,16 +64,24 @@ export const runStatus = async (
     };
   }
 
-  const statuses = await Promise.all(
-    selected.map((entry) =>
-      worktreeStatus(repoGit, {
+  const spaces = context.dryRun ? {} : await indexSpaces(context);
+
+  const details = await Promise.all(
+    selected.map(async (entry): Promise<WorktreeDetail> => {
+      const status = await worktreeStatus(repoGit, {
         entry,
         repoRoot: topology.repoRoot,
         worktreesRoot: topology.worktreesRoot,
         exists: repoProbes.fs.exists,
-      }),
-    ),
+      });
+      const state = await readCreation(repoGit, entry.path);
+      return {
+        status,
+        state,
+        space: spaces.byCheckout?.get(status.path),
+      };
+    }),
   );
 
-  return { kind: "ok", report: { topology, statuses } };
+  return { kind: "ok", report: { topology, details, spaces } };
 };
