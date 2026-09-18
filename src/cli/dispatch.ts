@@ -4,6 +4,7 @@ import { runLs } from "../commands/ls.js";
 import { runStatus } from "../commands/status.js";
 import { runRm } from "../commands/rm.js";
 import { runOpen } from "../commands/open.js";
+import { runProvision } from "../commands/provision.js";
 import type { CommandContext } from "../commands/context.js";
 import { renderDoctor } from "../format/doctor.js";
 import { renderNew } from "../format/new.js";
@@ -12,6 +13,7 @@ import { renderStatus } from "../format/status.js";
 import { renderRm } from "../format/rm.js";
 import { checkLayout } from "../format/layout.js";
 import { renderOpen } from "../format/open.js";
+import { renderProvision } from "../format/provision.js";
 import { EXIT } from "./exit.js";
 import type { ExitCode } from "./exit.js";
 import { flag, value } from "./parse.js";
@@ -43,6 +45,7 @@ export const dispatch = async (
           gitignore: flag(invocation.options, "gitignore", true),
           forceUmbrella: invocation.options.umbrella as boolean | undefined,
           open: flag(invocation.options, "open", true),
+          provision: flag(invocation.options, "provision", true),
           focus: flag(invocation.options, "focus", context.interactive),
           layout: value(invocation.options, "layout"),
         },
@@ -85,6 +88,34 @@ export const dispatch = async (
       return result.kind === "ok"
         ? { stdout: text, code: EXIT.OK }
         : { stderr: text, code: EXIT.ERROR };
+    }
+
+    case "provision": {
+      const branch = invocation.positionals.branch;
+      if (branch === undefined) {
+        return { stderr: "wt provision: missing <branch>\n", code: EXIT.USAGE };
+      }
+      const result = await runProvision(
+        { repo: value(invocation.options, "repo"), branch },
+        context,
+      );
+      if (context.json) {
+        return {
+          stdout: `${JSON.stringify(result, null, 2)}\n`,
+          code:
+            result.kind === "ok" && result.report.ok ? EXIT.OK : EXIT.PARTIAL,
+        };
+      }
+      if (result.kind !== "ok") {
+        return {
+          stderr: `wt provision: ${result.kind === "error" ? result.message : "pick a repository"}\n`,
+          code: EXIT.ERROR,
+        };
+      }
+      return {
+        stdout: renderProvision(result.report),
+        code: result.report.ok ? EXIT.OK : EXIT.PARTIAL,
+      };
     }
 
     case "open": {

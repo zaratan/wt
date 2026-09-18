@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { join } from "node:path";
 import { createGit } from "./exec.js";
-import { resolveBranch, fetchBranch, defaultBase } from "./branch.js";
+import {
+  resolveBranch,
+  fetchBranch,
+  defaultBase,
+  preferredRemote,
+} from "./branch.js";
 import {
   addWorktree,
   git,
@@ -174,5 +179,19 @@ describe("defaultBase", () => {
   it("falls back to the current branch with no remote", async () => {
     const repo = await makeRepo(sandbox.root, "nobase");
     expect(await defaultBase(gitAt(repo), undefined)).toBe("main");
+  });
+});
+
+describe("preferredRemote", () => {
+  it("prefers origin over an alphabetically earlier deploy remote", () => {
+    expect(preferredRemote(["heroku", "origin", "scalingo"])).toBe("origin");
+  });
+
+  it("falls back to the first when there is no origin", () => {
+    expect(preferredRemote(["upstream", "fork"])).toBe("upstream");
+  });
+
+  it("returns undefined with no remote at all", () => {
+    expect(preferredRemote([])).toBeUndefined();
   });
 });

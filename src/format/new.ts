@@ -1,6 +1,7 @@
 import { relative } from "node:path";
 import type { NewPlan, NewResult } from "../commands/new.js";
 import { spaceLines } from "./space.js";
+import { provisionLines } from "./provision.js";
 
 const shorten = (path: string, base: string): string => {
   const rel = relative(base, path);
@@ -79,7 +80,12 @@ export const renderNew = (result: NewResult, cwd: string): string => {
       if (result.submodules?.ok === false) {
         lines.push(`  submodules FAILED: ${result.submodules.message ?? ""}`);
       }
+      if (result.configWritten !== undefined) {
+        lines.push(`  config  written to ${result.configWritten}`);
+      }
+      lines.push(...provisionLines(result.provisioning));
       lines.push(...spaceLines(result.space));
+      for (const warning of result.warnings ?? []) lines.push(`  ! ${warning}`);
       lines.push("", `  cd ${shorten(result.plan.worktreePath, cwd)}`);
       break;
   }

@@ -32,7 +32,14 @@ const contextAt = (cwd: string, overrides: Partial<CommandContext> = {}) =>
 
 const addWorktreeTo = async (repo: string, branch: string): Promise<string> => {
   const created = await runNew(
-    { branch, fetch: false, gitignore: false, open: false, focus: false },
+    {
+      branch,
+      fetch: false,
+      gitignore: false,
+      open: false,
+      focus: false,
+      provision: false,
+    },
     contextAt(repo),
   );
   if (created.kind !== "created") throw new Error(`setup: ${created.kind}`);
@@ -162,6 +169,7 @@ describe("wt rm", () => {
         gitignore: false,
         open: false,
         focus: false,
+        provision: false,
       },
       contextAt(clone),
     );

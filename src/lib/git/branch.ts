@@ -88,6 +88,14 @@ export const listRemotes = async (git: Git): Promise<readonly string[]> => {
 };
 
 /**
+ * `git remote` lists alphabetically, so a repo with deploy remotes answers
+ * `heroku` before `origin`. Upstream is what we want, not the first name.
+ */
+export const preferredRemote = (
+  remotes: readonly string[],
+): string | undefined => (remotes.includes("origin") ? "origin" : remotes[0]);
+
+/**
  * A plain `git fetch <remote> <branch>` returns 0 on a single-branch clone
  * WITHOUT creating refs/remotes/<remote>/<branch>, so asking first and fetching
  * with an explicit refspec is what stops a divergent branch being created in
@@ -177,8 +185,7 @@ export const resolveBranch = async (
     return { kind: "checkout-local", branch };
   }
 
-  const remotes = await listRemotes(git);
-  const remote = input.remote ?? remotes[0];
+  const remote = input.remote ?? preferredRemote(await listRemotes(git));
 
   if (remote !== undefined) {
     if (await remoteRefExists(git, remote, branch)) {

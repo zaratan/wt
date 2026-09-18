@@ -22,6 +22,10 @@ import {
 import { WORKTREES_DIR, violatedGuards } from "../lib/git/topology.js";
 import type { Topology } from "../lib/git/topology.js";
 import { openSpaceFor, type SpaceOutcome } from "./space.js";
+import { configFor } from "./provision.js";
+import { provision, type ProvisionReport } from "../lib/provision/run.js";
+import { writeFile, mkdir as makeDir } from "node:fs/promises";
+import { join } from "node:path";
 import type { CommandContext } from "./context.js";
 
 export type NewInput = {
@@ -35,6 +39,7 @@ export type NewInput = {
   open: boolean;
   focus: boolean;
   layout?: string;
+  provision: boolean;
 };
 
 export type NewPlan = {
@@ -56,6 +61,9 @@ export type NewResult =
       ignore?: IgnoreOutcome;
       submodules?: { ok: boolean; message?: string };
       space?: SpaceOutcome;
+      provisioning?: ProvisionReport;
+      configWritten?: string;
+      warnings?: readonly string[];
     }
   | {
       kind: "exists";
@@ -240,21 +248,59 @@ export const runNew = async (
     ? await initSubmodules(repoGit, worktreePath)
     : undefined;
 
-  // Provisioning lands in phase 6; until then commands are safe to type
-  // straight away.
+  const loaded = await configFor(topology, context);
+  if (loaded.kind === "error") {
+    return { kind: "error", message: loaded.message };
+  }
+
+  // First worktree for this repo: write the detected config so the next run is
+  // deterministic rather than re-detected.
+  let configWritten: string | undefined;
+  if (loaded.generated !== undefined) {
+    const directory = join(topology.configRoot, ".wt");
+    const file = join(directory, `${topology.repoName}.toml`);
+    await makeDir(directory, { recursive: true });
+    await writeFile(`${file}.tmp`, loaded.generated);
+    const { rename } = await import("node:fs/promises");
+    await rename(`${file}.tmp`, file);
+    configWritten = file;
+  }
+
+  const provisioning = input.provision
+    ? await provision(repoGit, {
+        repoRoot: topology.repoRoot,
+        worktreePath,
+        config: loaded.config,
+        env: context.env,
+        onProgress: context.trace,
+      })
+    : undefined;
+
+  // The space opens either way: a failed provisioning is exactly when a
+  // terminal is wanted. Only the pane commands wait for success.
   const space = input.open
     ? await openSpaceFor(
         {
           topology,
           worktreePath,
           label: plan.label,
-          layoutSource: input.layout,
+          layoutSource: input.layout ?? loaded.config.space.layout,
           focus: input.focus,
-          runCommands: true,
+          runCommands: provisioning === undefined || provisioning.ok,
         },
         context,
       )
     : undefined;
 
-  return { kind: "created", plan, notices, ignore, submodules, space };
+  return {
+    kind: "created",
+    plan,
+    notices,
+    ignore,
+    submodules,
+    space,
+    provisioning,
+    configWritten,
+    warnings: loaded.warnings,
+  };
 };
