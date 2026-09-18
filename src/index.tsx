@@ -6,6 +6,7 @@ import { dispatch } from "./cli/dispatch.js";
 import { EXIT } from "./cli/exit.js";
 import type { CommandContext } from "./commands/context.js";
 import { askConfirm } from "./lib/tty/confirm.js";
+import { interactiveResolvers } from "./ui/drive.js";
 import { APP_VERSION } from "./version.js";
 
 // The only place that reads ambient process state; everything below takes it
@@ -57,6 +58,12 @@ switch (result.kind) {
       !flag(options, "yes", false);
 
     const aborter = new AbortController();
+    // Ink owns stdout and Ctrl-C while a screen is up; the process handler
+    // would otherwise write "stopping…" straight into the frame.
+    const inkHeld = { current: false };
+    const resolvers = interactive
+      ? interactiveResolvers(inkHeld)
+      : { chooseRepo: undefined };
 
     const context: CommandContext = {
       cwd:
@@ -79,6 +86,7 @@ switch (result.kind) {
         : undefined,
       signal: aborter.signal,
       pid: process.pid,
+      chooseRepo: resolvers.chooseRepo,
       trace: verbose
         ? (line) => {
             process.stderr.write(`${line}\n`);
@@ -92,7 +100,9 @@ switch (result.kind) {
     const onInterrupt = (): void => {
       if (interrupt.requested) process.exit(EXIT.INTERRUPTED);
       interrupt.requested = true;
-      process.stderr.write("\nstopping… (Ctrl-C again to quit now)\n");
+      if (!inkHeld.current) {
+        process.stderr.write("\nstopping… (Ctrl-C again to quit now)\n");
+      }
       aborter.abort();
     };
     process.on("SIGINT", onInterrupt);

@@ -112,7 +112,11 @@ export const runProvision = async (
 ): Promise<ProvisionResult> => {
   const git = gitFor(context, context.cwd);
   const resolution = await resolveRepo(
-    { startDir: context.cwd, repoArg: input.repo },
+    {
+      startDir: context.cwd,
+      repoArg: input.repo,
+      chooseRepo: context.chooseRepo,
+    },
     createProbes(git),
   );
   if (resolution.kind !== "ok") return resolution;

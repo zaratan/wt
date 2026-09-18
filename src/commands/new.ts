@@ -105,6 +105,7 @@ export const runNew = async (
       repoArg: input.repo,
       forceUmbrella: input.forceUmbrella,
       askUmbrella: umbrellaAsker(context),
+      chooseRepo: context.chooseRepo,
     },
     createProbes(git),
   );

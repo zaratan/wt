@@ -86,7 +86,11 @@ export const runLs = async (
   const probes = createProbes(git);
 
   const resolution = await resolveRepo(
-    { startDir: context.cwd, repoArg: input.repo },
+    {
+      startDir: context.cwd,
+      repoArg: input.repo,
+      chooseRepo: context.chooseRepo,
+    },
     probes,
   );
   if (resolution.kind !== "ok") return resolution;

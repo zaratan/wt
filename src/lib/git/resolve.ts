@@ -9,6 +9,14 @@ import {
 
 export type RepoCandidate = { name: string; path: string };
 
+export type RepoChoice = {
+  from: string;
+  candidates: readonly RepoCandidate[];
+};
+
+/** Answers with a candidate's absolute path, or undefined to give up. */
+export type ChooseRepo = (choice: RepoChoice) => Promise<string | undefined>;
+
 export type RepoResolution =
   | { kind: "ok"; topology: Topology }
   | { kind: "choose"; from: string; candidates: readonly RepoCandidate[] }
@@ -20,6 +28,7 @@ export type ResolveInput = {
   forceUmbrella?: boolean;
   worktreesDir?: string;
   askUmbrella?: UmbrellaAsk;
+  chooseRepo?: ChooseRepo;
 };
 
 const isMainCheckout = async (
@@ -133,7 +142,14 @@ export const resolveRepo = async (
     const only = candidates[0];
     if (only !== undefined) return topologyFor(only.path);
   }
-  return { kind: "choose", from: startDir, candidates };
+  const choice: RepoChoice = { from: startDir, candidates };
+  // An absolute path, never a bare name: resolveRepo accepts a path directly,
+  // whereas a name re-enters the sibling search and can resolve differently
+  // from another cwd.
+  const picked = await input.chooseRepo?.(choice);
+  if (picked !== undefined) return topologyFor(picked);
+
+  return { kind: "choose", ...choice };
 };
 
 export const candidateNames = (

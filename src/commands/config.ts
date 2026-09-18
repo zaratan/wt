@@ -51,6 +51,7 @@ export const runConfig = async (
       startDir: context.cwd,
       repoArg,
       askUmbrella: writes ? umbrellaAsker(context) : undefined,
+      chooseRepo: context.chooseRepo,
     },
     createProbes(git),
   );

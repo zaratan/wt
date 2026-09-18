@@ -122,6 +122,24 @@ Sans terminal (`--json`, `--yes`, pipe), le verdict est `plain` avec la raison
 `undecided`, que `wt doctor` affiche. `context.confirm` est absent hors TTY, donc
 « personne à qui demander » vaut toujours « non ».
 
+## Ink — mesuré sur ink 6.6
+
+- **`instance.waitUntilExit()` ne résout jamais après `instance.unmount()`.**
+  L'attendre bloque l'appelant pour toujours : l'écran répondu reste affiché et
+  la commande ne reprend pas. Symptôme vu en vrai : « entrée n'a rien fait ».
+  `unmount()` seul rend la main en quelques millisecondes.
+- **Ink monte seulement le temps d'une question.** stdout appartient à Ink ou à
+  l'appelant, jamais aux deux : `prompt()` démonte avant que quoi que ce soit
+  soit écrit, dans un `finally`.
+- **`patchConsole` est actif par défaut** : un `console.log` pendant qu'Ink
+  dessine part dans son tampon et n'apparaît pas où on l'attend. Déboguer par
+  `process.stderr.write`, ou couper `patchConsole`.
+- **Un faux `stdin` fait maison ne suffit pas** pour éprouver `useInput` :
+  utiliser le harnais d'`ink-testing-library`, qui alimente Ink correctement.
+  Un faux naïf fait croire que `key.return` ne se déclenche pas.
+- Pendant qu'Ink est monté, il possède aussi Ctrl-C : le handler de processus
+  se tait, sinon « stopping… » s'écrit en plein milieu de la frame.
+
 ## Codes de sortie
 
 |     |                                                                           |

@@ -145,16 +145,26 @@ export default tseslint.config(
     },
   },
 
-  // --- Block 4: everything else (index.tsx, cli/, ui/) ----------------------
-  // The UI layer may import ink; nobody may spawn directly.
+  // --- Block 4: cli/ --------------------------------------------------------
+  // `ui/` is the only place with ink. dispatch returns data upward and
+  // index.tsx decides who renders it, so `wt ls --json | jq` can never grow
+  // escape codes.
   {
-    files: ["src/**/*.{ts,tsx}"],
-    ignores: [
-      "src/lib/**",
-      "src/commands/**",
-      "src/format/**",
-      "src/**/*.test.{ts,tsx}",
-    ],
+    files: ["src/cli/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { paths: SPAWN_PATHS, patterns: [UI_GROUP] },
+      ],
+    },
+  },
+
+  // --- Block 5: index.tsx and ui/ -------------------------------------------
+  // The only layer that may import ink; nobody may spawn directly.
+  {
+    files: ["src/index.tsx", "src/ui/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.test.{ts,tsx}"],
     rules: {
       "no-restricted-imports": ["error", { paths: SPAWN_PATHS }],
     },

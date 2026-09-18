@@ -56,6 +56,14 @@ describe("architecture boundaries", () => {
       expect(fired).toContain(RESTRICTED_IMPORTS);
     });
 
+    it("bans it in ui/, the layer most tempted to reach for it", async () => {
+      const fired = await rulesFiredAt(
+        "src/ui/__probe_spawn.ts",
+        `import { spawn } from "node:child_process";\nexport const x = spawn;\n`,
+      );
+      expect(fired).toContain(RESTRICTED_IMPORTS);
+    });
+
     it("bans it in format/, which only ever formats", async () => {
       const fired = await rulesFiredAt(
         "src/format/__probe_spawn.ts",
@@ -90,6 +98,22 @@ describe("architecture boundaries", () => {
         `import { App } from "../../ui/App.js";\nexport const x = App;\n`,
       );
       expect(fired).toContain(RESTRICTED_IMPORTS);
+    });
+
+    it("bans ink from cli/, so dispatch can never render escape codes into --json", async () => {
+      const fired = await rulesFiredAt(
+        "src/cli/__probe_ink.ts",
+        `import { Box } from "ink";\nexport const x = Box;\n`,
+      );
+      expect(fired).toContain(RESTRICTED_IMPORTS);
+    });
+
+    it("allows ink in ui/, which is the whole point of the layer", async () => {
+      const fired = await rulesFiredAt(
+        "src/ui/__probe_ink.ts",
+        `import { Box } from "ink";\nexport const x = Box;\n`,
+      );
+      expect(fired).not.toContain(RESTRICTED_IMPORTS);
     });
 
     it("bans ink from commands/", async () => {
