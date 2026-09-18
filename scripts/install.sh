@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# wt install script — downloads the binary matching the host
-# OS/arch from GitHub Releases and installs it to ~/.local/bin/wt.
+# wt install script — downloads the binary matching the host OS/arch from
+# GitHub Releases and installs it to ~/.local/bin/wt.
 #
 # Usage:
 #   curl -fL https://raw.githubusercontent.com/zaratan/wt/main/scripts/install.sh | bash
@@ -22,44 +22,85 @@ case "$OS-$ARCH" in
   Darwin-arm64) ASSET="wt-darwin-arm64" ;;
   Linux-x86_64) ASSET="wt-linux-x64" ;;
   *)
-    echo "Plateforme non supportée pour le moment : $OS $ARCH" >&2
-    echo "(macOS Apple Silicon + Linux x86_64)" >&2
+    echo "Unsupported platform: $OS $ARCH" >&2
+    echo "(macOS Apple Silicon and Linux x86_64 only)" >&2
     exit 1
     ;;
 esac
 
+TARBALL="${ASSET}.tar.gz"
+
 if [ "$VERSION" = "latest" ]; then
-  URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
+  BASE="https://github.com/${REPO}/releases/latest/download"
 else
-  URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
+  BASE="https://github.com/${REPO}/releases/download/${VERSION}"
 fi
 
 mkdir -p "$INSTALL_DIR"
 DEST="${INSTALL_DIR}/wt"
-TMP="${DEST}.tmp.$$"
+TARBALL_TMP="${INSTALL_DIR}/.wt-tarball.tmp.$$"
+SUMS_TMP="${INSTALL_DIR}/.wt-sha256sums.tmp.$$"
+BIN_TMP="${DEST}.tmp.$$"
 
-echo "Téléchargement de wt (${VERSION}) depuis GitHub Releases…"
-# Atomic install: download to a tmp file first, only swap if successful.
-curl -fL "$URL" -o "$TMP"
-chmod +x "$TMP"
-mv "$TMP" "$DEST"
+cleanup() { rm -f "$TARBALL_TMP" "$SUMS_TMP" "$BIN_TMP"; }
+trap cleanup EXIT
 
-echo "✓ wt installé dans ${DEST}"
+echo "Downloading wt (${VERSION}) from GitHub Releases…"
+# INVARIANT — nothing destructive before the final `mv`. Every write lands on a
+# tmp path, so a truncated download can never leave a partial binary at $DEST.
+curl -fL "${BASE}/${TARBALL}" -o "$TARBALL_TMP"
 
-# PATH check (best-effort): warn the user if the install dir is missing from PATH.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{ print $1 }'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{ print $1 }'
+  fi
+}
+
+warn_unverified() {
+  echo "  warning: could not verify the download ($1); continuing." >&2
+}
+
+# Fail open on a missing sums file, hard-fail on a mismatch. The threat here is
+# a truncated transfer, not a compromised origin: the tarball and SHA256SUMS
+# come from the same release. Hard-failing on "absent" would break every
+# install made against a release published before this file existed.
+if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+  warn_unverified "no checksum tool on this machine"
+elif ! curl -fsL "${BASE}/SHA256SUMS" -o "$SUMS_TMP" 2>/dev/null; then
+  warn_unverified "this release publishes no SHA256SUMS"
+else
+  # awk alone, never `grep | awk`: under `set -o pipefail` a non-matching grep
+  # exits 1 and would abort the whole script instead of falling through here.
+  EXPECTED_SUM="$(awk -v f="$TARBALL" '$2 == f { print $1; exit }' "$SUMS_TMP")"
+  if [ -z "$EXPECTED_SUM" ]; then
+    warn_unverified "SHA256SUMS does not list ${TARBALL}"
+  elif [ "$(sha256_of "$TARBALL_TMP")" != "$EXPECTED_SUM" ]; then
+    echo "checksum mismatch for ${TARBALL}" >&2
+    echo "Nothing was installed; any existing wt is untouched." >&2
+    echo "This is almost always a dropped connection — run the install again." >&2
+    exit 1
+  fi
+fi
+
+tar -xzf "$TARBALL_TMP" -C "$INSTALL_DIR" "$ASSET"
+mv "${INSTALL_DIR}/${ASSET}" "$BIN_TMP"
+chmod +x "$BIN_TMP"
+mv "$BIN_TMP" "$DEST"
+
+echo "wt installed at ${DEST}"
+
 case ":$PATH:" in
-  *":$INSTALL_DIR:"*)
-    echo "Vous pouvez lancer wt en tapant simplement : wt"
-    ;;
+  *":$INSTALL_DIR:"*) ;;
   *)
     echo ""
-    echo "⚠ Le dossier ${INSTALL_DIR} n'est pas dans votre PATH."
-    echo "Pour le rendre disponible partout, ajoutez cette ligne à votre"
-    echo "fichier ~/.zshrc (macOS) ou ~/.bashrc (Linux) :"
+    echo "  ${INSTALL_DIR} is not on your PATH. Add this to ~/.zshrc:"
     echo ""
-    echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+    echo "      export PATH=\"\$HOME/.local/bin:\$PATH\""
     echo ""
-    echo "Puis ouvrez un nouveau terminal."
-    echo "En attendant, vous pouvez lancer : ${DEST}"
+    echo "  Until then, run it as ${DEST}"
     ;;
 esac
+
+echo "wt drives herdr. If you do not have it: https://herdr.dev"

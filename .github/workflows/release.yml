@@ -37,10 +37,14 @@ jobs:
             echo "::error::Binary reports '${ACTUAL}' but tag is '${GITHUB_REF_NAME}'"
             exit 1
           fi
+      # Homebrew's formula url carries #{version}, so the asset name must be
+      # stable and the payload a tarball, not a bare binary.
+      - name: Package the binary
+        run: tar -czf dist/wt-darwin-arm64.tar.gz -C dist wt-darwin-arm64
       - uses: actions/upload-artifact@v7
         with:
           name: wt-darwin-arm64
-          path: dist/wt-darwin-arm64
+          path: dist/wt-darwin-arm64.tar.gz
 
   build-linux:
     runs-on: ubuntu-latest
@@ -67,10 +71,14 @@ jobs:
             echo "::error::Binary reports '${ACTUAL}' but tag is '${GITHUB_REF_NAME}'"
             exit 1
           fi
+      # Homebrew's formula url carries #{version}, so the asset name must be
+      # stable and the payload a tarball, not a bare binary.
+      - name: Package the binary
+        run: tar -czf dist/wt-linux-x64.tar.gz -C dist wt-linux-x64
       - uses: actions/upload-artifact@v7
         with:
           name: wt-linux-x64
-          path: dist/wt-linux-x64
+          path: dist/wt-linux-x64.tar.gz
 
   release:
     needs: [build-macos, build-linux]
@@ -87,12 +95,26 @@ jobs:
         with:
           name: wt-linux-x64
           path: dist/
+      # Consumed by scripts/install.sh to verify a download before extracting.
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          sha256sum wt-darwin-arm64.tar.gz wt-linux-x64.tar.gz > SHA256SUMS
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # `strategy :github_latest` in the Homebrew formula reads
+          # /releases/latest, so an unflagged pre-release would be served to
+          # every `brew upgrade`.
+          FLAGS=()
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            FLAGS=(--prerelease)
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
-            dist/wt-darwin-arm64 \
-            dist/wt-linux-x64
+            "${FLAGS[@]}" \
+            dist/wt-darwin-arm64.tar.gz \
+            dist/wt-linux-x64.tar.gz \
+            dist/SHA256SUMS
