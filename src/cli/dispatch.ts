@@ -9,6 +9,7 @@ import { renderNew } from "../format/new.js";
 import { renderLs } from "../format/ls.js";
 import { renderStatus } from "../format/status.js";
 import { renderRm } from "../format/rm.js";
+import { checkLayout } from "../format/layout.js";
 import { EXIT } from "./exit.js";
 import type { ExitCode } from "./exit.js";
 import { flag, value } from "./parse.js";
@@ -79,6 +80,17 @@ export const dispatch = async (
       return result.kind === "ok"
         ? { stdout: text, code: EXIT.OK }
         : { stderr: text, code: EXIT.ERROR };
+    }
+
+    case "layout": {
+      const dsl = invocation.positionals.dsl;
+      if (dsl === undefined) {
+        return { stderr: "wt layout: missing <dsl>\n", code: EXIT.USAGE };
+      }
+      const checked = checkLayout(dsl);
+      return checked.ok
+        ? { stdout: checked.text, code: EXIT.OK }
+        : { stderr: checked.text, code: EXIT.USAGE };
     }
 
     case "rm": {
