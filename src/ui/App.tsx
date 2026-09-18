@@ -1,5 +1,5 @@
 import { Box, Text, useApp, useInput } from "ink";
-import { APP_VERSION } from "./version.js";
+import { APP_VERSION } from "../version.js";
 
 export type AppProps = { cwd: string };
 
