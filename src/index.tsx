@@ -1,13 +1,18 @@
 #!/usr/bin/env bun
-import { parse } from "./cli/parse.js";
+import { resolve } from "node:path";
+import { parse, flag, value } from "./cli/parse.js";
 import { renderHelp } from "./cli/help.js";
+import { dispatch } from "./cli/dispatch.js";
 import { EXIT } from "./cli/exit.js";
+import type { CommandContext } from "./commands/context.js";
 import { APP_VERSION } from "./version.js";
 
 // The only place that reads ambient process state. Everything downstream takes
 // it as a parameter — that is what makes `--cwd` honest and the layers testable
 // (enforced by no-restricted-properties in eslint.config.js).
 const argv = process.argv.slice(2);
+const env = process.env;
+const processCwd = process.cwd();
 
 const result = parse(argv);
 
@@ -41,11 +46,35 @@ switch (result.kind) {
   }
 
   case "run": {
-    // Phase 1A ships the CLI surface; the commands land in 1B and 1C.
-    process.stderr.write(
-      `wt ${result.invocation.spec.name}: not implemented yet.\n`,
-    );
-    process.exit(EXIT.ERROR);
+    const { options } = result.invocation;
+    const json = flag(options, "json", false);
+    const verbose = flag(options, "verbose", false);
+    const cwdOverride = value(options, "cwd");
+
+    const context: CommandContext = {
+      cwd:
+        cwdOverride === undefined
+          ? processCwd
+          : resolve(processCwd, cwdOverride),
+      env,
+      options,
+      json,
+      // --json implies --yes: a machine reader cannot answer a prompt.
+      yes: json || flag(options, "yes", false),
+      verbose,
+      dryRun: flag(options, "dry-run", false),
+      interactive: process.stdout.isTTY,
+      trace: verbose
+        ? (line) => {
+            process.stderr.write(`${line}\n`);
+          }
+        : undefined,
+    };
+
+    const output = await dispatch(result.invocation, context);
+    if (output.stdout !== undefined) process.stdout.write(output.stdout);
+    if (output.stderr !== undefined) process.stderr.write(output.stderr);
+    process.exit(output.code);
     break;
   }
 }

@@ -86,7 +86,25 @@ sens (elle mord là où il faut, elle ne mord pas sur l'exception).
   amont : git répond en français sur cette machine. Classer par code de sortie et
   par sortie `--porcelain` quand elle existe.
 - Tout chemin qui entre ou sort passe par `realpath` : sur macOS `/tmp` est
-  `/private/tmp`, et deux clés non normalisées divergent en silence.
+  `/private/tmp`, et deux clés non normalisées divergent en silence. Les fixtures de
+  test normalisent leur racine pour la même raison.
+
+## Pièges git mesurés sur cette machine
+
+- **`GIT_DIR` hérité gagne sur `-C`.** `GIT_DIR=/a/.git git -C /b worktree list` opère
+  sur `/a`, renvoie 0, ne dit rien. Les hooks, `git rebase -x` et `git bisect run`
+  l'exportent. D'où le scrub dans `lib/exec/env.ts`, et `wt doctor` qui le signale.
+- **Dans un sous-module, `git worktree list --porcelain` renvoie le GITDIR**
+  (`<super>/.git/modules/sub`) comme chemin de worktree, pas le working tree.
+  `rev-parse --show-toplevel` donne le bon. Faire confiance à la première sortie
+  placerait `worktreesRoot` **dans** `.git`. Traité dans `topology.ts`.
+- **Ne jamais dériver le checkout principal par `dirname(--git-common-dir)`** : pour un
+  worktree de dépôt bare ça donne le dossier parent du bare, pour un sous-module
+  `<super>/.git/modules`. La première entrée de `worktree list --porcelain` fait foi.
+- **Un dépôt bare fait planter `rev-parse --show-toplevel`.** Tester
+  `--is-bare-repository` d'abord et refuser franchement.
+- **`check-ignore` renvoie 128 hors dépôt**, pas 1. Tester `!== 0` lit « non ignoré »
+  dans « pas un dépôt ».
 
 ## Codes de sortie
 

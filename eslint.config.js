@@ -167,7 +167,12 @@ export default tseslint.config(
   // environment is its entire job.
   {
     files: ["src/**/*.{ts,tsx}"],
-    ignores: ["src/index.tsx", "src/lib/exec/env.ts", "src/**/*.test.{ts,tsx}"],
+    ignores: [
+      "src/index.tsx",
+      "src/lib/exec/env.ts",
+      "src/**/*.test.{ts,tsx}",
+      "src/test/**",
+    ],
     rules: {
       "no-restricted-properties": [
         "error",
