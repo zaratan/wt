@@ -25,7 +25,19 @@ export const worktreeAddArgs = (
         `${plan.remote}/${plan.branch}`,
       ];
     case "create":
-      return ["worktree", "add", "-b", plan.branch, path, plan.base];
+      // --no-track: branching from origin/develop otherwise inherits it as
+      // upstream (branch.autoSetupMerge), so the first `git push` lands on
+      // develop instead of on the new branch. A branch nobody has pushed has
+      // no upstream; `git push -u` is what gives it one.
+      return [
+        "worktree",
+        "add",
+        "--no-track",
+        "-b",
+        plan.branch,
+        path,
+        plan.base,
+      ];
   }
 };
 

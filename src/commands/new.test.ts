@@ -7,6 +7,7 @@ import { createGit } from "../lib/git/exec.js";
 import type { CommandContext } from "./context.js";
 import {
   git,
+  makeSingleBranchClone,
   makeRepo,
   makeSandbox,
   type Sandbox,
@@ -436,5 +437,35 @@ describe("the config review", () => {
     });
 
     expect(existedWhenAsked).toBe(false);
+  });
+});
+
+describe("the upstream of a new branch", () => {
+  it("is nobody: branching from origin/main must not make it push to main", async () => {
+    const parent = join(sandbox.root, "upstream");
+    await mkdir(parent, { recursive: true });
+    const { clone } = await makeSingleBranchClone(parent, "app");
+
+    const created = await runNew(
+      {
+        branch: "feat/fresh",
+        from: "origin/main",
+        fetch: false,
+        gitignore: false,
+        open: false,
+        focus: false,
+        provision: false,
+      },
+      contextAt(clone),
+    );
+    if (created.kind !== "created") throw new Error(created.kind);
+
+    const merge = await git(
+      clone,
+      "config",
+      "--get",
+      "branch.feat/fresh.merge",
+    ).catch(() => "");
+    expect(merge.trim()).toBe("");
   });
 });
